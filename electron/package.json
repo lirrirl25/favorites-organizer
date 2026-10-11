@@ -1,0 +1,17 @@
+{
+  "name": "favorites-organizer",
+  "productName": "收藏夹整理",
+  "version": "1.2.0",
+  "description": "RedNote / 抖音 收藏整理",
+  "main": "main.js",
+  "author": "Erin Li",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.4.4",
+    "electron": "^33.4.11"
+  }
+}

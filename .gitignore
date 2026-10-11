@@ -1,0 +1,12 @@
+node_modules
+electron/dist
+electron/app
+covers/
+data/*.txt
+data.json
+index.html
+debug/
+*.zip
+expired_candidates.csv
+__pycache__/
+*.pyc
