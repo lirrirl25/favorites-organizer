@@ -12,6 +12,15 @@ const realSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rand = (a, b) => a + Math.random() * (b - a);
 const jitter = (a, b) => Math.round(rand(a, b) + (Math.random() - 0.5) * 400);
 const alive = (w) => !!(w && !w.isDestroyed() && w.webContents && !w.webContents.isDestroyed());
+// 收藏列表第一页常常是服务端直接渲染进页面的（不走接口），接口只拦到第二页起。
+// 所以用接口数据时，也把页面上带收藏标记的卡片（已经过 sanitize）按页面顺序放在前面，避免漏掉最新收藏。
+function mergedItems(state, useApi) {
+  if (!useApi) return state.dom;
+  const m = new Map();
+  for (const [k, v] of state.dom) if (!state.api.has(k)) m.set(k, v);
+  for (const [k, v] of state.api) m.set(k, v);
+  return m;
+}
 class WindowGone extends Error { constructor() { super('同步窗口已关闭'); this.windowGone = true; } }
 
 const DEFAULTS = {
@@ -81,10 +90,16 @@ class SyncManager {
       });
       const wc = w.webContents;
       wc.setUserAgent(this.ua());
-      wc.setWindowOpenHandler(({ url }) => {   // 站内新窗口在同一窗口打开
+      wc.setWindowOpenHandler(({ url }) => {   // 站内新窗口在同一窗口打开；非 http(s) 链接（如 bitbrowser://）一律拦下
+        if (!/^https?:/i.test(url)) { this.log(`[${platform}] 已拦截外部协议新窗口 ${String(url).slice(0, 80)}`); return { action: 'deny' }; }
         if (this.allowed(platform, url) && alive(w)) w.loadURL(url).catch(() => {});
         return { action: 'deny' };
       });
+      // 页面脚本跳转到外部协议会弹出 Windows「选择应用打开」：主框架和子框架都拦下
+      const blockScheme = (e, url) => { if (url && !/^(https?|about|data|blob):/i.test(url)) { e.preventDefault(); this.log(`[${platform}] 已拦截外部协议跳转 ${String(url).slice(0, 80)}`); } };
+      wc.on('will-navigate', blockScheme);
+      wc.on('will-redirect', blockScheme);
+      wc.on('will-frame-navigate', (e) => blockScheme(e, e.url));
       // 同步进行中：关窗口要先确认（页面脚本调用 window.close() 已被 preload 拦住）
       w.on('close', (e) => {
         try { this.ses(platform).cookies.flushStore().catch(() => {}); } catch (err) {}
@@ -298,7 +313,7 @@ class SyncManager {
         const dom = await this.collectDom(w, platform, state);
         for (const it of dom) if (!state.dom.has(it.key)) state.dom.set(it.key, it);
         const useApi = state.api.size > 0 || state.apiHits > 0;
-        const cur = useApi ? state.api : state.dom;
+        const cur = mergedItems(state, useApi);
         const keys = [...cur.keys()];
         const newCount = keys.filter((k) => !known.has(k)).length;
         this.progress({ phase: 'scroll', collected: keys.length, added: newCount, msg: `已读取 ${keys.length} 条，新增 ${newCount} 条` + (useApi ? '' : '（页面读取模式）') });
@@ -339,7 +354,7 @@ class SyncManager {
   }
   finish(result, state, known, mode, localKeys) {
     const useApi = state.api.size > 0;
-    const cur = useApi ? state.api : state.dom;
+    const cur = mergedItems(state, useApi);
     result.allItems = [...cur.values()];
     result.collected = result.allItems.length;
     result.newItems = result.allItems.filter((i) => !known.has(i.key));

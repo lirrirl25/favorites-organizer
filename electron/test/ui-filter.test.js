@@ -71,3 +71,30 @@ test('筛选：分类 / 来源 / 状态 / 搜索 / 特殊视图都能切换，�
     assert.deepStrictEqual(errors, []);
   } finally { await browser.close(); }
 });
+
+// 回归：v1.3.3 同步后 reloadMerged() 用磁盘上的 marks 替换内存里的，丢了 xpending，
+// 之后每次 render 都在 isXPending 抛异常 → 分类 / 筛选点了都没反应。
+test('桌面版：同步后重新加载 marks（缺 xpending/gone 字段）筛选仍然可用', { skip }, async () => {
+  const page = buildPage();
+  const browser = await pptr.launch({ executablePath: CHROME, args: ['--no-sandbox'] });
+  try {
+    const pg = await browser.newPage();
+    const errors = []; pg.on('pageerror', (e) => errors.push(e.message));
+    await pg.evaluateOnNewDocument(() => {
+      const d = { synced: [], marks: { unsaved: {}, kept: {} }, status: {}, pending: { batches: [] }, syncmeta: {}, historyInfo: [] };
+      const P = (v) => Promise.resolve(v || {});
+      window.favStore = { isDesktop: true, coverBase: '', get: (n) => d[n], set: (n, o) => { d[n] = o; return P(); },
+        reload: (n) => (n === 'marks' ? { unsaved: {}, kept: {} } : d[n]),   // 和旧版磁盘文件一样：没有 xpending / gone
+        openLog: P, readLog: () => P({ text: '' }), showLogFolder: P, openDataDir: P, openPost: P, openDouyinApp: P, undoSync: P,
+        pending: { accept: () => P({ added: 0 }), discard: P },
+        sync: { status: () => P({}), login: P, start: P, cancel: P, onProgress: () => () => {} } };
+    });
+    await pg.goto('file://' + page);
+    await pg.evaluate(() => window.__FAV_APP__.reloadMerged());
+    const cats = await pg.$$eval('#chips .chip[data-c]', (b) => b.map((x) => x.dataset.c).filter((c) => c !== '全部'));
+    await pg.click(`#chips .chip[data-c="${cats[0]}"]`);
+    const s = await pg.evaluate(() => ({ cat: window.__FAV_APP__.F.cat, n: window.__FAV_APP__.filtered().length, cards: document.querySelectorAll('#grid .card').length, on: document.querySelector('#chips .chip.on').dataset.c }));
+    assert.strictEqual(s.on, cats[0]); assert.ok(s.n < 6 && s.n === s.cards);
+    assert.deepStrictEqual(errors, []);
+  } finally { await browser.close(); }
+});

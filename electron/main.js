@@ -201,6 +201,15 @@ ipcMain.handle('sync:undo', () => {
   return { at: h.at, summary: h.summary, left: hist.length };
 });
 
+// 所有窗口（包括同步窗口）都不允许跳转到 http(s) 以外的协议，避免页面脚本触发 bitbrowser:// 之类的系统弹窗
+app.on('web-contents-created', (e, wc) => {
+  const bad = (url) => url && !/^(https?|file|about|data|blob|devtools|chrome-extension):/i.test(url);
+  const block = (ev, url) => { if (bad(url)) { ev.preventDefault(); log('已拦截外部协议跳转 ' + String(url).slice(0, 80)); } };
+  wc.on('will-navigate', block);
+  wc.on('will-redirect', block);
+  wc.on('will-frame-navigate', (ev) => block(ev, ev.url));
+});
+
 // ---------- 窗口 ----------
 let win;
 function createWindow() {

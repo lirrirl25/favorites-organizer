@@ -100,6 +100,7 @@ main{padding:16px 0 60px}
 .modal .row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:#222;color:#fff;padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;transition:.25s;z-index:60;pointer-events:none;max-width:90vw;text-align:center}
 .toast.show{opacity:1;transform:translateX(-50%)}
+.summary{display:none}
 .stats{display:flex;gap:10px;flex-wrap:wrap}
 .stats span b{color:var(--ink)}
 /* 过期 / 已取消 */
@@ -299,11 +300,13 @@ function rebuild(){
   ITEMS=list;}
 function statusOf(it){return STATUS_MAP[it.key]||'unseen';}
 /* ---------- 过期 / 已取消收藏 标记（userData/marks.json） ---------- */
-var MARKS=storeGet('marks',LS_MARKS,{unsaved:{},kept:{}});MARKS.unsaved=MARKS.unsaved||{};MARKS.kept=MARKS.kept||{};MARKS.xpending=MARKS.xpending||{};MARKS.gone=MARKS.gone||{};
+function normMarks(m){m=(m&&typeof m==='object')?m:{};['unsaved','kept','xpending','gone'].forEach(function(k){if(!m[k]||typeof m[k]!=='object')m[k]={};});return m;}
+var MARKS=normMarks(storeGet('marks',LS_MARKS,null));
 (function(){var mv=0;Object.keys(MARKS.unsaved).forEach(function(k){var m=MARKS.unsaved[k];if(m&&m.by==='sync'){MARKS.gone[k]={by:'sync',at:m.at||Date.now()};delete MARKS.unsaved[k];mv++;}});if(mv&&typeof saveMarks==='function')setTimeout(saveMarks,0);})();
 function saveMarks(){storeSet('marks',LS_MARKS,MARKS);}
 function isUnsaved(it){return !!MARKS.unsaved[it.key];}
 function isGone(it){return !!(MARKS.gone&&MARKS.gone[it.key]);}
+window.addEventListener('error',function(e){try{toast('出错了：'+(e&&e.message||e));}catch(x){}});
 function isExpired(it){return !!it.expired&&!MARKS.kept[it.key]&&!isUnsaved(it);}
 function markUnsaved(it,by){MARKS.unsaved[it.key]={by:by||'manual',at:Date.now()};saveMarks();}
 function unmarkUnsaved(it){delete MARKS.unsaved[it.key];saveMarks();}
@@ -535,10 +538,6 @@ function renderSyncPanel(st){
         '<button class="btn" data-a="full" data-p="'+p+'" title="从头到尾慢慢滚完整个收藏列表：补全缺失的条目和封面，并找出已取消收藏的（需要较长时间）">全量同步</button>'+
         (syncing&&syncing.p===p?'<button class="btn" data-a="stop">停止</button>':'')+'</div>'+
         '<div class="prog'+(lastProg[p]&&lastProg[p].captcha?' warn':'')+'" id="prog-'+p+'">'+esc(lastProg[p]&&lastProg[p].msg||'')+'</div></div>';}).join('')+
-    (function(){var n=pendingList().length,x=pendingExtra(),h=DESK.reload('historyInfo')||[];
-      return '<div class="sp"><h4>🗂 同步结果</h4><div class="st">新同步到的收藏会直接加入主列表；已不在收藏里的只标「可能已取消」，不会删除。</div>'+
-        '<div class="row">'+
-        '<button class="btn" data-a="undo" '+(h.length?'':'disabled')+' title="'+(h.length?'撤销 '+esc(fmtTime(h[h.length-1].at))+' 加入的结果':'还没有加入过同步结果')+'">撤销上次同步</button></div></div>';})()+
     '<label class="sw"><input type="checkbox" id="autosync" '+(meta.autoSync?'checked':'')+'> 启动时自动同步（增量，只同步已登录的平台）</label>'+
     '<div class="row" style="margin-top:14px;justify-content:space-between"><span class="mini"><a href="#" id="openlog">查看同步日志</a></span><button class="btn" id="m-close">关闭</button></div>';
   $('mask').classList.add('show');
@@ -582,7 +581,7 @@ function pendingList(){var pd=DESK?(DESK.get('pending')||{}):{};var seen={},out=
 function pendingExtra(){var pd=DESK?(DESK.get('pending')||{}):{},rm={},pt=0;(pd.batches||[]).forEach(function(b){(b.removed||[]).forEach(function(k){rm[k]=1;});pt+=(b.patches||[]).length;});return {removed:Object.keys(rm),patches:pt,batches:(pd.batches||[]).length};}
 function updateSyncBadge(){if(!SYNC)return;var n=pendingList().length,x=pendingExtra();
   $('syncbtn').innerHTML='🔄<span class="t"> 账号 / 同步</span>';}
-function reloadMerged(){DESK.reload('synced');DESK.reload('pending');var m=DESK.reload('marks')||{};m.unsaved=m.unsaved||{};m.kept=m.kept||{};MARKS=m;rebuild();render();updateSyncBadge();}
+function reloadMerged(){DESK.reload('synced');DESK.reload('pending');MARKS=normMarks(DESK.reload('marks'));rebuild();render();updateSyncBadge();}
 function applySyncResult(r){
   if(!r)return '';
   if(DESK){DESK.reload('pending');updateSyncBadge();}
