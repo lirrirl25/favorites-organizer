@@ -389,9 +389,9 @@ function xbarHTML(it){
   if(it.source==='x'){
     if(isXPending(it))return '<div class="xbar"><button class="x-unsave" title="已经在 x.com 手动取消书签后，点这里标记（默认隐藏）">已在 X 取消</button><button class="x-xundo" title="不取消了，移出待确认">撤销</button></div>';
     return '<div class="xbar"><button class="x-xunbm" title="确认后放进「🔖 待取消书签」列表；软件不会自动取消书签">取消书签</button></div>';}
-  if(!isExpired(it))return '<div class="xbar"><button class="x-go" title="'+(it.source==='douyin'&&DESK&&DESK.openDouyinApp?'复制视频链接并打开抖音 PC 客户端，在客户端里取消收藏':'在内置浏览器里打开原帖，手动取消收藏')+'">取消收藏 ↗</button>'+
+  if(!isExpired(it))return '<div class="xbar"><button class="x-go" title="'+'在内置浏览器里打开原帖，手动取消收藏'+'">取消收藏 ↗</button>'+
     '<button class="x-unsave" title="已在 App 里取消后，点这里标记（默认隐藏）">已取消</button></div>';
-  return '<div class="xbar"><button class="x-go" title="'+(it.source==='douyin'&&DESK&&DESK.openDouyinApp?'复制视频链接并打开抖音 PC 客户端，在客户端里取消收藏':'在内置浏览器里打开原帖，手动取消收藏')+'">去取消收藏 ↗</button>'+
+  return '<div class="xbar"><button class="x-go" title="'+'在内置浏览器里打开原帖，手动取消收藏'+'">去取消收藏 ↗</button>'+
     '<button class="x-unsave" title="标记为已取消收藏（默认隐藏）">已取消</button><button class="x-keep" title="不再提示过期">保留</button></div>';}
 function cardHTML(it){var st=statusOf(it),c=catColor(it.category),exp=isExpired(it),uns=isUnsaved(it);
   var badge=uns?'<span class="tag unsaved">已取消收藏</span>':(exp?'<span class="tag exp-'+(it.expired==='high'?'high':'medium')+'" title="'+esc(it.expired_reason)+'">'+(it.expired==='high'?'已过期':'可能过期')+'</span>':'');
@@ -399,7 +399,7 @@ function cardHTML(it){var st=statusOf(it),c=catColor(it.category),exp=isExpired(
   if(!uns&&isGone(it))badge+='<span class="tag exp-medium" title="同步时没在你的收藏列表里找到，可能已在 App 里取消收藏（软件不会自动删除）">可能已取消</span>';
   if(!uns&&it.synced_at&&Date.now()-it.synced_at<3*864e5)badge+='<span class="tag new">新同步</span>';
   return '<article class="card'+(st==='done'?' is-done':'')+(uns?' is-unsaved':'')+'" data-k="'+esc(it.key)+'" style="--c:'+c+'">'+
-    '<a class="body" href="'+esc(it.url)+'" target="_blank" rel="noopener noreferrer" title="'+(it.source==='douyin'&&DESK&&DESK.openDouyinApp?'点击复制链接并打开抖音 PC 客户端':'点击在浏览器打开原帖')+'">'+thumbHTML(it)+
+    '<a class="body" href="'+esc(it.url)+'" target="_blank" rel="noopener noreferrer" title="'+(DESK?'点击在应用内打开原帖':'点击在浏览器打开原帖')+'">'+thumbHTML(it)+
       '<div class="inner"><div class="meta">'+badge+'<span class="tag src-'+it.source+'">'+(SOURCES[it.source]||it.source)+'</span>'+
       '<span class="tag">'+(it.type==='video'?'▶ 视频':'🖼 图文')+'</span>'+
       '<span class="tag cat">'+(EMOJI[it.category]||'')+' '+esc(it.category)+'</span></div>'+
@@ -438,12 +438,11 @@ function openDouyinApp(it){
     else toast('没能打开抖音客户端，已在内置浏览器打开（链接也已复制）',5000);
   }).catch(function(e){toast('打开失败：'+(e&&e.message||e));});}
 function openPost(it){
-  if(it.source==='x'){window.open(it.url,'_blank','noopener');return;}
-  if(it.source==='douyin'&&DESK&&DESK.openDouyinApp){openDouyinApp(it);return;}
   if(DESK&&DESK.openPost){DESK.openPost(it.source,it.url).then(function(){toast('已在内置浏览器打开，取消收藏后回来点「已取消」');}).catch(function(e){toast('打开失败：'+(e&&e.message||e));});}
   else window.open(it.url,'_blank','noopener');}
 function openCard(it){
-  if(it.source==='douyin'&&DESK&&DESK.openDouyinApp){openDouyinApp(it);return;}
+  // 桌面版：在应用内已登录的窗口打开（RedNote / 抖音 / X 各自的会话）；网页版：新标签页
+  if(DESK&&DESK.openPost){DESK.openPost(it.source,it.url).catch(function(e){toast('打开失败：'+(e&&e.message||e));});return;}
   window.open(it.url,'_blank','noopener');}
 function onXbar(e,after){var a=e.target.closest('a.body');
   if(a&&!e.target.closest('button')){e.preventDefault();var ca=a.closest('.card'),ia=ca&&byKey(ca.dataset.k);if(ia)openCard(ia);return true;}
@@ -452,7 +451,7 @@ function onXbar(e,after){var a=e.target.closest('a.body');
   if(b.classList.contains('dyapp'))openDouyinApp(it);
   else if(b.classList.contains('x-go'))openPost(it);
   else if(b.classList.contains('x-unsave')){markUnsaved(it,'manual');toast('已标记为已取消收藏（可在「🗑 已取消」里恢复）');after();}
-  else if(b.classList.contains('x-xopen'))window.open(it.url,'_blank','noopener');
+  else if(b.classList.contains('x-xopen'))openCard(it);
   else if(b.classList.contains('x-xunbm')){
     if(confirm('把这条 X 书签放进「待取消书签」列表？\n\n'+(it.title||'').slice(0,80)+'\n\n软件不会自动取消书签。之后请在 x.com 打开原帖手动取消，再回来点「已在 X 取消」。')){
       markXPending(it);toast('已放进「🔖 待取消书签」（未在 X 上做任何操作）',5000);after();}}

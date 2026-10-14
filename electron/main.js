@@ -93,7 +93,25 @@ const PLATFORMS = ['rednote', 'douyin'];
 ipcMain.handle('sync:status', () => syncMgr().status());
 ipcMain.handle('sync:login', (e, p) => { if (!PLATFORMS.includes(p)) throw new Error('bad platform'); return syncMgr().openLogin(p); });
 ipcMain.handle('sync:cancel', () => { syncMgr().cancel(); return true; });
-ipcMain.handle('open:post', (e, p, url) => { if (!PLATFORMS.includes(p)) throw new Error('bad platform'); return syncMgr().openPost(p, url); });
+// 点卡片 / 取消收藏：都在应用内的已登录窗口打开（RedNote / 抖音用同步用的会话，X 用 persist:x）
+let xWin = null;
+function openX(url) {
+  if (!/^https:\/\/(x|twitter)\.com\//i.test(url)) throw new Error('不是 X 链接');
+  if (!xWin || xWin.isDestroyed()) {
+    xWin = new BrowserWindow({ width: 1100, height: 860, title: 'X', autoHideMenuBar: true,
+      webPreferences: { partition: 'persist:x', contextIsolation: true, nodeIntegration: false, sandbox: true } });
+    xWin.webContents.setWindowOpenHandler(({ url: u }) => { if (/^https:\/\/(x|twitter)\.com\//i.test(u)) xWin.loadURL(u); else if (/^https?:/i.test(u)) shell.openExternal(u); return { action: 'deny' }; });
+    xWin.on('closed', () => { xWin = null; });
+  }
+  xWin.loadURL(url).catch((e) => log('[x] 打开失败 ' + e.message));
+  xWin.show(); xWin.focus();
+  return true;
+}
+ipcMain.handle('open:post', (e, p, url) => {
+  if (p === 'x') return openX(url);
+  if (!PLATFORMS.includes(p)) throw new Error('bad platform');
+  return syncMgr().openPost(p, url);
+});
 // 抖音：复制视频链接 → 打开抖音 PC 客户端（douyin-pc:// 只能打开首页，深链无效）→ 失败就用内置浏览器
 async function launchDouyinPc() {
   const fake = process.env.FAV_SELFTEST && process.env.FAV_FAKE_DOUYIN_PC;
