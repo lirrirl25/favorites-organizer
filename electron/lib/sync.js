@@ -86,7 +86,8 @@ class SyncManager {
       delete this.wins[platform];
       w = new BrowserWindow({
         width: 1180, height: 860, show: false, title: platform === 'rednote' ? 'RedNote' : '抖音', autoHideMenuBar: true,
-        webPreferences: { session: this.ses(platform), preload: path.join(__dirname, 'sync-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
+        webPreferences: { session: this.ses(platform), preload: path.join(__dirname, 'sync-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: false },
+        paintWhenInitiallyHidden: true, skipTaskbar: true,
       });
       const wc = w.webContents;
       wc.setUserAgent(this.ua());
@@ -126,7 +127,7 @@ class SyncManager {
       wc.on('console-message', (e, lvl, msg) => { if (/\[favsync\]/.test(msg)) this.log(`[${platform}] ${msg}`); });
       this.wins[platform] = w;
     }
-    if (show) { inactive ? w.showInactive() : (w.show(), w.focus()); }
+    if (show) { w.setSkipTaskbar(false); inactive ? w.showInactive() : (w.show(), w.focus()); }
     return w;
   }
   allowed(platform, url) {
@@ -167,13 +168,14 @@ class SyncManager {
   async openPost(platform, url) {
     if (!this.allowed(platform, url)) throw new Error('不支持的链接');
     let w;
-    if (this.running && this.running.platform === platform) {
-      // 正在同步：另开一个同会话的窗口，不打断同步窗口
+    {
+      // 帖子总是另开一个可见的同会话窗口，不占用后台同步窗口
       w = new BrowserWindow({ width: 1180, height: 860, title: platform === 'rednote' ? 'RedNote' : '抖音', autoHideMenuBar: true,
         webPreferences: { session: this.ses(platform), contextIsolation: true, nodeIntegration: false, sandbox: true } });
       w.webContents.setUserAgent(this.ua());
       w.webContents.setWindowOpenHandler(({ url: u }) => { if (this.allowed(platform, u)) w.loadURL(u).catch(() => {}); return { action: 'deny' }; });
-    } else w = this.window(platform);
+      w.show();
+    }
     await this.load(w, url, platform).catch((e) => this.log(`[${platform}] 打开帖子失败 ${e.message}`));
     return true;
   }
@@ -265,7 +267,8 @@ class SyncManager {
     let w;
     try {
       if (auto && !(await this.isLoggedIn(platform))) { result.stopReason = '未登录，自动同步跳过'; this.log(`[${platform}] 未登录，自动同步跳过`); return result; }
-      w = this.window(platform, { show: true, inactive: auto });
+      w = this.window(platform, { show: false });   // 后台同步：窗口不弹出，只有真的要登录 / 验证时才显示
+      if (alive(w) && w.isVisible()) w.hide();
       this.log(`[${platform}] 开始同步 mode=${mode} auto=${auto} 本地已有=${known.size}`);
       if (!this.url(w)) await this.load(w, 'about:blank', platform).catch(() => {});
       await this.attach(w, platform);
@@ -273,7 +276,7 @@ class SyncManager {
       // ----- 登录 -----
       if (!(await this.isLoggedIn(platform))) {
         await this.load(w, cfg.home, platform);
-        if (alive(w)) { w.show(); w.focus(); }
+        if (alive(w)) { w.setSkipTaskbar(false); w.show(); w.focus(); }
         this.progress({ phase: 'login', msg: '请在弹出的窗口里扫码登录，登录后会自动继续…' });
         const t0 = Date.now();
         while (!(await this.isLoggedIn(platform))) {
@@ -282,6 +285,7 @@ class SyncManager {
           await realSleep(2000);
         }
         await sleep(2500);
+        if (alive(w)) w.hide();
       }
       this.log(`[${platform}] 已登录，打开收藏页`);
       this.progress({ phase: 'open', msg: '正在打开收藏页…' });
@@ -442,8 +446,8 @@ class SyncManager {
   async waitCaptcha(w, platform, state, why) {
     const t0 = Date.now();
     if (state.rateHits >= 4) { this.log(`[${platform}] 多次限流，停止`); return false; }
-    if (alive(w)) { w.show(); w.focus(); }
-    this.progress({ phase: 'captcha', captcha: true, msg: (why || '平台提示访问太频繁 / 需要验证') + '：请在弹出的窗口里完成验证，完成后会自动继续（最多等 15 分钟）' });
+    if (alive(w) && why) { w.setSkipTaskbar(false); w.show(); w.focus(); }   // 只有真的看到验证元素才弹窗口
+    this.progress({ phase: 'captcha', captcha: true, msg: why ? why + '：请在弹出的窗口里完成验证，完成后会自动继续（最多等 15 分钟）' : '平台提示访问太频繁，稍等一会儿后台自动继续…' });
     this.log(`[${platform}] 暂停等待验证: ${why || 'api blocked'}`);
     let clear = 0;
     while (Date.now() - t0 < 15 * 60 * 1000) {
@@ -456,6 +460,7 @@ class SyncManager {
     }
     if (Date.now() - t0 >= 15 * 60 * 1000) return false;
     state.blocked = false;
+    if (alive(w) && this.running) w.hide();
     this.progress({ phase: 'scroll', captcha: false, msg: '验证已通过，继续同步…' });
     await sleep(jitter(3000, 5000));
     return true;
