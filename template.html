@@ -318,7 +318,7 @@ function setStatus(it,s){if(s==='unseen')delete STATUS_MAP[it.key];else STATUS_M
 
 /* ---------- 状态 / 筛选 ---------- */
 var prefs=lsGet(LS_PREFS,{});
-var F={q:'',cat:'全部',view:'normal',source:prefs.source||'all',type:prefs.type||'all',status:prefs.status||'all',sort:prefs.sort||'order'};
+var F={q:'',cat:'全部',view:'normal',source:prefs.source||'all',type:prefs.type||'all',status:'unseen',sort:prefs.sort||'order'};
 var PAGE=90, shown=PAGE, shuffleSeed=Math.random();
 function savePrefs(){lsSet(LS_PREFS,{source:F.source,type:F.type,status:F.status,sort:F.sort});}
 

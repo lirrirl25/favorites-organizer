@@ -225,7 +225,8 @@ class SyncManager {
   }
   handleApi(w, platform, url, text, r) {
     const st = r.state, cfg = this.config[platform];
-    let json; try { json = JSON.parse(text); } catch (e) { this.log(`[${platform}] 接口不是 JSON: ${url}`); return; }
+    if (!text || !String(text).trim()) return;   // CORS 预检 / 空响应
+    let json; try { json = JSON.parse(text); } catch (e) { this.log(`[${platform}] 接口不是 JSON: ${shortUrl(url)}`); return; }
     if ((cfg.mePatterns || []).some((p) => new RegExp(p).test(url))) { const d = json.data || json; st.meId = String(d.user_id || d.userId || '') || st.meId; return; }
     if (!engine.isFavApi(platform, url, cfg.favPatterns)) { st.ignoredApi++; if (st.ignoredApi <= 5) this.log(`[${platform}] 忽略非收藏接口 ${shortUrl(url)}`); return; }
     const page = this.url(w);
@@ -427,7 +428,9 @@ class SyncManager {
     return this.js(w, `(function(sels,reSrc){
       function vis(e){var r=e.getBoundingClientRect();var s=getComputedStyle(e);return r.width>30&&r.height>30&&s.visibility!=='hidden'&&s.display!=='none';}
       for(var i=0;i<sels.length;i++){var e=document.querySelector(sels[i]);if(e&&vis(e))return '出现了滑块验证';}
-      var t=document.body?document.body.innerText.slice(0,3000):'';if(new RegExp(reSrc,'i').test(t))return '页面提示需要验证 / 访问太频繁';
+      // 只看弹层 / 验证容器里的文字（页面正文里的标题、评论可能碰巧带「验证」「太频繁」之类的字）
+      var re=new RegExp(reSrc,'i');var boxes=[].slice.call(document.querySelectorAll('[role="dialog"],[class*="captcha"],[id*="captcha"],[class*="verify"],[id*="verify"],[class*="secsdk"],[class*="modal"],[class*="toast"]'));
+      for(var j=0;j<boxes.length&&j<200;j++){var b=boxes[j];if(!vis(b))continue;var tx=(b.innerText||'').slice(0,500);if(tx.length<300&&re.test(tx))return '页面提示需要验证 / 访问太频繁';}
       return '';})(${JSON.stringify(CAPTCHA_SELECTORS)},${JSON.stringify(CAPTCHA_TEXT.source)})`, '');
   }
   async waitCaptcha(w, platform, state, why) {
@@ -458,15 +461,26 @@ class SyncManager {
     const cfg = this.config[platform];
     const js = platform === 'rednote' ? `(function(marker){
       var out=[],seen={};
-      [].slice.call(document.querySelectorAll('a[href*="/explore/"]')).forEach(function(a){
+      // 卡片链接有两种：/explore/ID?... 和（2026 起的收藏页）/user/profile/UID/ID?...；都要带收藏标记
+      [].slice.call(document.querySelectorAll('a[href*="/explore/"],a[href*="/user/profile/"]')).forEach(function(a){
         if(a.closest('header,nav,aside,.side-bar'))return;
         var href=a.getAttribute('href')||'';if(href.indexOf(marker)<0)return;
-        var m=href.match(/explore\\/([0-9a-f]{24})/);if(!m||seen[m[1]])return;
+        var m=href.match(/explore\\/([0-9a-f]{24})/)||href.match(/user\\/profile\\/[0-9a-zA-Z]+\\/([0-9a-f]{24})/);if(!m||seen[m[1]])return;
         var card=a.closest('section,.note-item,[class*="note-item"]');if(!card)return;seen[m[1]]=1;
         function q(s){var e=card.querySelector(s);return e?(e.innerText||e.textContent||'').trim():'';}
-        var img=card.querySelector('img');
-        out.push({nid:m[1],href:a.href,title:q('.title, .footer .title, [class*="title"]'),author:q('.author .name, .name, [class*="author"] [class*="name"]'),
+        var img=card.querySelector('img');var qs=href.split('?')[1]||'';
+        out.push({nid:m[1],href:location.origin+'/explore/'+m[1]+(qs?'?'+qs:''),title:q('.title, .footer .title, [class*="title"]'),author:q('.author .name, .name, [class*="author"] [class*="name"]'),
           likes:q('.like-wrapper .count, [class*="like"] .count, .count'),cover:img?(img.currentSrc||img.src||''):'',video:!!card.querySelector('.play-icon,[class*="play-icon"]')});});
+      // 首屏服务端渲染的数据：只在「收藏 → 笔记」标签页读 user.notes 里的收藏列表
+      try{
+        if(/[?&]tab=fav/.test(location.search)&&!/subTab=(board|album)/.test(location.search)){
+          var raw=function(x){return x&&(x._rawValue!==undefined?x._rawValue:(x._value!==undefined?x._value:x));};
+          var u=window.__INITIAL_STATE__&&window.__INITIAL_STATE__.user;var lists=raw(u&&u.notes)||[];var list=raw(lists[1])||[];
+          list.forEach(function(x){x=raw(x)||{};var c=raw(x.noteCard)||{};var id=c.noteId||x.id;if(!/^[0-9a-f]{24}$/.test(id||'')||seen[id])return;seen[id]=1;
+            var tok=c.xsecToken||x.xsecToken||'';var cv=raw(c.cover)||{};var ii=raw(c.interactInfo)||{};var us=raw(c.user)||{};
+            out.push({nid:id,href:location.origin+'/explore/'+id+'?xsec_token='+encodeURIComponent(tok)+'&'+marker,title:c.displayTitle||'',author:us.nickname||us.nickName||'',
+              likes:String(ii.likedCount||''),cover:cv.urlDefault||cv.url||'',video:c.type==='video',ssr:true});});}
+      }catch(e){}
       return out;})(${JSON.stringify(cfg.domHrefMarker || 'xsec_source=pc_collect')})` : `(function(marker){
       var out=[],seen={};
       [].slice.call(document.querySelectorAll('li a[href*="/video/"],li a[href*="/note/"]')).forEach(function(a){
@@ -482,6 +496,17 @@ class SyncManager {
         out.push({nid:m[2],kind:m[1],href:a.href,title:title,author:'',likes:likes,cover:src});});
       return out;})(${JSON.stringify(cfg.domCoverMarker || 's=PackSourceEnum_COLLECTION')})`;
     const raw = await this.js(w, js, []);
+    if (platform === 'rednote' && state && !state.diagDone) {
+      // 诊断：页面上的笔记卡片有多少，其中多少带收藏标记（只记数量和链接参数名，不记 ID）
+      const dg = await this.js(w, `(function(marker){var as=[].slice.call(document.querySelectorAll('a[href*="/explore/"],a[href*="/user/profile/"]')).filter(function(a){return !a.closest('header,nav,aside,.side-bar');});
+        var ids={},mk={},params={};as.forEach(function(a){var h=a.getAttribute('href')||'';var m=h.match(/explore\\/([0-9a-f]{24})/)||h.match(/user\\/profile\\/[0-9a-zA-Z]+\\/([0-9a-f]{24})/);if(!m)return;ids[m[1]]=1;if(h.indexOf(marker)>=0)mk[m[1]]=1;
+          var q=h.split('?')[1]||'';q.split('&').forEach(function(kv){var k=kv.split('=')[0],v=kv.split('=')[1]||'';if(k)params[k+(k==='xsec_source'?'='+v:'')]=1;});});
+        return {cards:Object.keys(ids).length,withMarker:Object.keys(mk).length,params:Object.keys(params).slice(0,12)};})(${JSON.stringify(cfg.domHrefMarker || 'xsec_source=pc_collect')})`, null);
+      if (dg && dg.cards) {
+        state.diagDone = true;
+        this.log(`[rednote] 首屏诊断: 首屏数据(含SSR)=${(raw || []).filter((x) => x.ssr).length} 页面卡片=${dg.cards} 带收藏标记=${dg.withMarker} 被过滤=${dg.cards - dg.withMarker} 链接参数=${(dg.params || []).join(',')} 已读取=${(raw || []).length}`);
+      }
+    }
     const base = cfg.base;
     const items = (raw || []).map((r) => {
       if (platform === 'rednote') {
