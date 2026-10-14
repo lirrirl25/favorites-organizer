@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """把 RedNote / 抖音 收藏 txt 转成 data.json。
 
-用法: python3 parse.py [-o data.json] [--source rednote|douyin] file1.txt [file2.txt ...]
+用法: python3 parse.py [-o data.json] [--source rednote|douyin|x] file1.txt [file2.txt ...]
 每行格式: 标题 | 作者 | 链接 | 点赞数 | 类型(image/video) | 收藏夹(可空) [| 封面图链接]   (6 段或 7 段都行)
 标题里本身带 " | " 也没关系：以 http 开头的那一段被当作链接，它前面一段是作者，再前面全是标题。
 来源判断顺序: --source 参数 > 链接域名 (douyin.com / rednote.com / xiaohongshu.com) > 文件名含 douyin/抖音 > 默认 rednote。
@@ -14,7 +14,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_rules(path=None):
-    with open(path or os.path.join(HERE, "rules.json"), encoding="utf-8") as f:
+    if not path:
+        path = os.path.join(HERE, "rules.json")
+        if not os.path.exists(path):  # 没有个人规则时用通用示例
+            path = os.path.join(HERE, "rules.example.json")
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -74,6 +78,8 @@ def detect_source(url, filename, forced):
     if forced:
         return forced
     host = urlsplit(url).netloc.lower()
+    if host in ("x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com"):
+        return "x"
     if "douyin" in host or "iesdouyin" in host:
         return "douyin"
     if "rednote" in host or "xiaohongshu" in host or "xhslink" in host:
@@ -94,6 +100,8 @@ def url_key(url):
         return "rednote/" + nid
     if nid and "douyin" in host:
         return "douyin/" + nid
+    if nid and re.fullmatch(r"(www\.|mobile\.)?(x|twitter)\.com", host) and "/status/" in p.path:
+        return "x/" + nid
     return (host + p.path.rstrip("/")) if host else url.strip()
 
 
@@ -152,6 +160,11 @@ def parse_files(files, rules, forced_source=None):
                         old["board"] = board
                     continue
                 nid = note_id_of(url)
+                if src == "x":
+                    if not title:
+                        title = "[媒体帖] " + (author if author.startswith("@") else "@" + author)
+                    if cover:
+                        cover = re.sub(r"name=(small|thumb|tiny)", "name=medium", cover)
                 typ = typ if typ in ("image", "video") else ("video" if "video" in typ else "image")
                 item = {
                     "id": src + "_" + (nid or hashlib.sha1(key.encode()).hexdigest()[:16]),
@@ -179,7 +192,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="+")
     ap.add_argument("-o", "--out", default=os.path.join(HERE, "data.json"))
-    ap.add_argument("--source", choices=["rednote", "douyin"])
+    ap.add_argument("--source", choices=["rednote", "douyin", "x"])
     ap.add_argument("--rules")
     a = ap.parse_args()
     rules = load_rules(a.rules)

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: blob: https: http:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>我的收藏夹 · RedNote & 抖音</title>
+<title>我的收藏夹 · RedNote & 抖音 & X</title>
 <style>
 :root{
   --bg:#f6f5f2; --card:#fff; --ink:#1f2328; --muted:#7a7f87; --line:#e8e6e1;
@@ -68,6 +68,8 @@ main{padding:16px 0 60px}
 .tag{font-size:11px;padding:2px 8px;border-radius:999px;background:#f1efea;color:#555;white-space:nowrap}
 .tag.src-rednote{background:var(--accent-soft);color:var(--accent)}
 .tag.src-douyin{background:#111;color:#fff}
+.tag.src-x{background:#e8f1fb;color:#0f1419;font-weight:700}
+.tag.xpend{background:#fff3cd;color:#8a5a00}
 .tag.cat{background:color-mix(in srgb,var(--c,#ddd) 18%,#fff);color:color-mix(in srgb,var(--c,#888) 70%,#000)}
 .title{font-size:15px;line-height:1.5;font-weight:600;margin:0;word-break:break-word;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .title mark{background:#ffe58a;color:inherit;border-radius:3px;padding:0 1px}
@@ -170,7 +172,7 @@ main{padding:16px 0 60px}
 <header>
   <div class="wrap">
     <div class="top">
-      <div class="brand">📌 我的收藏夹<small>RedNote · 抖音</small></div>
+      <div class="brand">📌 我的收藏夹<small>RedNote · 抖音 · X</small></div>
       <div class="search">
         <span class="ico">🔍</span>
         <input id="q" type="search" placeholder="搜索标题或作者，空格分隔多个关键词…" autocomplete="off">
@@ -216,10 +218,11 @@ var EMBED = JSON.parse(document.getElementById('fav-data').textContent);
 var RULES = JSON.parse(document.getElementById('fav-rules').textContent);
 var LS_STATUS='favapp.status.v1', LS_IMPORT='favapp.imported.v1', LS_PREFS='favapp.prefs.v1', LS_MARKS='favapp.marks.v1';
 var STATUS=[['unseen','未看'],['todo','待做'],['done','已做']];
-var SOURCES={rednote:'RedNote',douyin:'抖音'};
+var SOURCES={rednote:'RedNote',douyin:'抖音',x:'X'};
 var TYPES={image:'图文',video:'视频'};
 var PALETTE=['#ff6b81','#a78bfa','#f472b6','#60a5fa','#fbbf24','#34d399','#22d3ee','#fb923c','#38bdf8','#818cf8','#4ade80','#f87171','#c084fc','#facc15','#2dd4bf','#e879f9','#94a3b8','#a3a3a3'];
-var EMOJI={'美食/做饭':'🍜','美甲':'💅','发型':'💇','护肤美妆':'💄','穿搭':'👗','健身减脂/生酮':'🏋️','健康/医疗':'🩺','旅行(日本/酒店)':'✈️','工作/职场/学习':'💼','AI/编程':'🤖','创业/投资':'📈','游戏':'🎮','珠宝设计':'💍','生活技巧':'🧺','省钱/薅羊毛':'🐑','蒙城/加拿大生活':'🍁','宠物':'🐱','其他':'🗂️'};
+var EMOJI={'科技/AI':'🤖','学习/职场':'💼','美食':'🍜','穿搭':'👗','美妆护肤':'💄','健身运动':'🏋️','旅行':'✈️','本地生活':'📍','家居/生活技巧':'🧺','影视/音乐':'🎬','游戏':'🎮','理财/省钱':'💰','宠物':'🐱','其他':'📦'};
+if(RULES.emoji)for(var _k in RULES.emoji)EMOJI[_k]=RULES.emoji[_k];
 function catColor(c){var i=RULES.categories.indexOf(c);return PALETTE[(i<0?PALETTE.length-1:i)%PALETTE.length];}
 
 function lsGet(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch(e){return d;}}
@@ -236,6 +239,7 @@ function kwMatch(kw,t){kw=norm(kw);
 function noteId(url){try{var p=new URL(url).pathname.replace(/\/+$/,'');var s=p.split('/').pop();return /^[0-9a-zA-Z]{8,}$/.test(s)?s:'';}catch(e){return '';}}
 function urlKey(url){try{var u=new URL(String(url).trim()),h=u.host.toLowerCase(),nid=noteId(u.href);
   if(nid&&/rednote|xiaohongshu/.test(h))return 'rednote/'+nid; if(nid&&/douyin/.test(h))return 'douyin/'+nid;
+  if(nid&&/^(www\.|mobile\.)?(x|twitter)\.com$/.test(h)&&/\/status\//.test(u.pathname))return 'x/'+nid;
   return h+u.pathname.replace(/\/+$/,'');}catch(e){return String(url||'').trim();}}
 function boardHint(board,strength){var b=norm(board).trim();if(!b)return null;var br=RULES.board_rules||[];
   for(var i=0;i<br.length;i++)if(br[i][2]===strength&&norm(br[i][0])===b)return br[i][1];return null;}
@@ -251,6 +255,7 @@ function categorize(title,author,nid,board){
 function parseLikes(s){var m=String(s||'').trim().replace(/,/g,'').match(/^([\d.]+)\s*(万|w|k|千)?(\+)?$/i);if(!m)return 0;
   var n=parseFloat(m[1]),u=(m[2]||'').toLowerCase();return Math.round(n*({'万':1e4,'w':1e4,'k':1e3,'千':1e3}[u]||1));}
 function detectSource(url,fname){var h='';try{h=new URL(url).host.toLowerCase();}catch(e){}
+  if(/^(www\.|mobile\.)?(x|twitter)\.com$/.test(h))return 'x';
   if(/douyin/.test(h))return 'douyin'; if(/rednote|xiaohongshu|xhslink/.test(h))return 'rednote';
   return /douyin|抖音/i.test(fname||'')?'douyin':'rednote';}
 function parseTxt(text,fname){var out=[];
@@ -266,14 +271,14 @@ function normalizeItem(o,fname){
   var url=String(o.url||'').trim(); if(!url)return null;
   var nid=noteId(url), src=o.source||detectSource(url,fname), key=urlKey(url);
   var typ=String(o.type||'').toLowerCase(); typ=(typ==='video'||typ==='image')?typ:(/video|视频/.test(typ)?'video':'image');
-  return {id:o.id||(src+'_'+(nid||key)),source:src,title:o.title||'(无标题)',author:o.author||'',url:url,key:key,
+  return {id:o.id||(src+'_'+(nid||key)),source:src,title:o.title||(src==='x'?'[媒体帖] @'+String(o.author||'').replace(/^@/,''):'(无标题)'),author:o.author||'',url:url,key:key,
     likes:o.likes==null?'':String(o.likes),likes_num:o.likes_num!=null?+o.likes_num:parseLikes(o.likes),type:typ,board:o.board||'',
     category:o.category||categorize(o.title,o.author,nid,o.board),cover:o.cover||'',cover_local:o.cover_local||'',order:o.order!=null?+o.order:1e9,
     expired:o.expired||'',expired_reason:o.expired_reason||'',synced_at:o.synced_at||0};}
 
 /* ---------- 数据合并 ---------- */
 var STATUS_MAP=storeGet('status',LS_STATUS,{});
-(function migrate(){var moved=0,m={};for(var k in STATUS_MAP){var nk=/^(rednote|douyin)\//.test(k)?k:urlKey('https://'+k);if(nk!==k)moved++;if(!m[nk]||m[nk]==='unseen')m[nk]=STATUS_MAP[k];}
+(function migrate(){var moved=0,m={};for(var k in STATUS_MAP){var nk=/^(rednote|douyin|x)\//.test(k)?k:urlKey('https://'+k);if(nk!==k)moved++;if(!m[nk]||m[nk]==='unseen')m[nk]=STATUS_MAP[k];}
   if(moved){STATUS_MAP=m;setTimeout(function(){storeSet('status',LS_STATUS,STATUS_MAP);},0);}})();
 var ITEMS=[];
 function rebuild(){
@@ -295,12 +300,15 @@ function rebuild(){
   ITEMS=list;}
 function statusOf(it){return STATUS_MAP[it.key]||'unseen';}
 /* ---------- 过期 / 已取消收藏 标记（userData/marks.json） ---------- */
-var MARKS=storeGet('marks',LS_MARKS,{unsaved:{},kept:{}});MARKS.unsaved=MARKS.unsaved||{};MARKS.kept=MARKS.kept||{};
+var MARKS=storeGet('marks',LS_MARKS,{unsaved:{},kept:{}});MARKS.unsaved=MARKS.unsaved||{};MARKS.kept=MARKS.kept||{};MARKS.xpending=MARKS.xpending||{};
 function saveMarks(){storeSet('marks',LS_MARKS,MARKS);}
 function isUnsaved(it){return !!MARKS.unsaved[it.key];}
 function isExpired(it){return !!it.expired&&!MARKS.kept[it.key]&&!isUnsaved(it);}
 function markUnsaved(it,by){MARKS.unsaved[it.key]={by:by||'manual',at:Date.now()};saveMarks();}
 function unmarkUnsaved(it){delete MARKS.unsaved[it.key];saveMarks();}
+function isXPending(it){return !!MARKS.xpending[it.key];}
+function markXPending(it){MARKS.xpending[it.key]={at:Date.now()};saveMarks();}
+function unmarkXPending(it){delete MARKS.xpending[it.key];saveMarks();}
 function keepIt(it){MARKS.kept[it.key]=Date.now();saveMarks();}
 function setStatus(it,s){if(s==='unseen')delete STATUS_MAP[it.key];else STATUS_MAP[it.key]=s;storeSet('status',LS_STATUS,STATUS_MAP);}
 
@@ -320,7 +328,8 @@ function passBase(it,skip){
   if(skip!=='view'){
     if(F.view==='unsaved'){if(!isUnsaved(it))return false;}
     else if(isUnsaved(it))return false;
-    if(F.view==='expired'&&!isExpired(it))return false;}
+    if(F.view==='expired'&&!isExpired(it))return false;
+    if(F.view==='xpending'&&!isXPending(it))return false;}
   if(skip!=='source'&&F.source!=='all'&&it.source!==F.source)return false;
   if(skip!=='type'&&F.type!=='all'&&it.type!==F.type)return false;
   if(skip!=='status'&&F.status!=='all'&&statusOf(it)!==F.status)return false;
@@ -354,7 +363,7 @@ function segRender(el,opts,cur,counts,onPick){
 function renderFilters(){
   segRender($('f-status'),[['all','全部']].concat(STATUS),F.status,countBy('status',statusOf),function(v){F.status=v;savePrefs();reset();});
   var hasDy=ITEMS.some(function(i){return i.source==='douyin';});
-  segRender($('f-source'),[['all','全部'],['rednote','RedNote'],['douyin','抖音'+(hasDy?'':'(待导入)')]],F.source,countBy('source',function(i){return i.source;}),function(v){F.source=v;savePrefs();reset();});
+  segRender($('f-source'),[['all','全部'],['rednote','RedNote'],['douyin','抖音'+(hasDy?'':'(待导入)')],['x','X']],F.source,countBy('source',function(i){return i.source;}),function(v){F.source=v;savePrefs();reset();});
   segRender($('f-type'),[['all','全部'],['image','图文'],['video','视频']],F.type,countBy('type',function(i){return i.type;}),function(v){F.type=v;savePrefs();reset();});
   var cc=countBy('cat',function(i){return i.category;}),total=Object.values(cc).reduce(function(a,b){return a+b;},0);
   var cats=RULES.categories.slice();ITEMS.forEach(function(i){if(cats.indexOf(i.category)<0)cats.push(i.category);});
@@ -363,6 +372,8 @@ function renderFilters(){
   cats.sort(function(a,b){if(a==='其他')return 1;if(b==='其他')return -1;return (cc[b]||0)-(cc[a]||0);});
   var vc=countBy('view',function(i){return isUnsaved(i)?'unsaved':(isExpired(i)?'expired':'normal');});
   var special='<button class="chip special '+(F.view==='expired'?'on':'')+'" data-v="expired" title="已过期 / 可能过期的收藏">⏰ 过期<span class="n">'+(vc.expired||0)+'</span></button>'+
+    (function(){var nx=0,toks=tokens();ITEMS.forEach(function(i){if(isXPending(i)&&passBase(i,'view')&&!isUnsaved(i)&&matchScore(i,toks))nx++;});
+      return (nx||F.view==='xpending')?'<button class="chip special '+(F.view==='xpending'?'on':'')+'" data-v="xpending" title="你确认要取消的 X 书签（软件不会自动取消，需要你在 x.com 手动取消）">🔖 待取消书签<span class="n">'+nx+'</span></button>':'';})()+
     ((vc.unsaved||F.view==='unsaved')?'<button class="chip special '+(F.view==='unsaved'?'on':'')+'" data-v="unsaved" title="已取消收藏（默认隐藏）">🗑 已取消<span class="n">'+(vc.unsaved||0)+'</span></button>':'');
   $('chips').innerHTML=special+'<button class="chip '+(F.cat==='全部'?'on':'')+'" data-c="全部">全部<span class="n">'+total+'</span></button>'+
     cats.map(function(c){var n=cc[c]||0;return '<button class="chip '+(F.cat===c?'on ':'')+(n?'':'zero')+'" data-c="'+esc(c)+'">'+(EMOJI[c]||'🏷️')+' '+esc(c)+'<span class="n">'+n+'</span></button>';}).join('');
@@ -371,15 +382,19 @@ function renderFilters(){
   $('sort').value=F.sort;}
 function xbarHTML(it){
   if(isUnsaved(it))return '<div class="xbar"><button class="x-restore" title="撤销「已取消收藏」标记">↩ 恢复</button></div>';
+  if(it.source==='x'){
+    if(isXPending(it))return '<div class="xbar"><button class="x-unsave" title="已经在 x.com 手动取消书签后，点这里标记（默认隐藏）">已在 X 取消</button><button class="x-xundo" title="不取消了，移出待确认">撤销</button></div>';
+    return '<div class="xbar"><button class="x-xunbm" title="确认后放进「🔖 待取消书签」列表；软件不会自动取消书签">取消书签</button></div>';}
   if(!isExpired(it))return '<div class="xbar"><button class="x-go" title="'+(it.source==='douyin'&&DESK&&DESK.openDouyinApp?'复制视频链接并打开抖音 PC 客户端，在客户端里取消收藏':'在内置浏览器里打开原帖，手动取消收藏')+'">取消收藏 ↗</button>'+
     '<button class="x-unsave" title="已在 App 里取消后，点这里标记（默认隐藏）">已取消</button></div>';
   return '<div class="xbar"><button class="x-go" title="'+(it.source==='douyin'&&DESK&&DESK.openDouyinApp?'复制视频链接并打开抖音 PC 客户端，在客户端里取消收藏':'在内置浏览器里打开原帖，手动取消收藏')+'">去取消收藏 ↗</button>'+
     '<button class="x-unsave" title="标记为已取消收藏（默认隐藏）">已取消</button><button class="x-keep" title="不再提示过期">保留</button></div>';}
 function cardHTML(it){var st=statusOf(it),c=catColor(it.category),exp=isExpired(it),uns=isUnsaved(it);
   var badge=uns?'<span class="tag unsaved">已取消收藏</span>':(exp?'<span class="tag exp-'+(it.expired==='high'?'high':'medium')+'" title="'+esc(it.expired_reason)+'">'+(it.expired==='high'?'已过期':'可能过期')+'</span>':'');
+  if(!uns&&isXPending(it))badge+='<span class="tag xpend">待取消书签</span>';
   if(!uns&&it.synced_at&&Date.now()-it.synced_at<3*864e5)badge+='<span class="tag new">新同步</span>';
   return '<article class="card'+(st==='done'?' is-done':'')+(uns?' is-unsaved':'')+'" data-k="'+esc(it.key)+'" style="--c:'+c+'">'+
-    '<a class="body" href="'+esc(it.url)+'" target="_blank" rel="noopener noreferrer">'+thumbHTML(it)+
+    '<a class="body" href="'+esc(it.url)+'" target="_blank" rel="noopener noreferrer" title="'+(it.source==='douyin'&&DESK&&DESK.openDouyinApp?'点击复制链接并打开抖音 PC 客户端':'点击在浏览器打开原帖')+'">'+thumbHTML(it)+
       '<div class="inner"><div class="meta">'+badge+'<span class="tag src-'+it.source+'">'+(SOURCES[it.source]||it.source)+'</span>'+
       '<span class="tag">'+(it.type==='video'?'▶ 视频':'🖼 图文')+'</span>'+
       '<span class="tag cat">'+(EMOJI[it.category]||'')+' '+esc(it.category)+'</span></div>'+
@@ -387,9 +402,7 @@ function cardHTML(it){var st=statusOf(it),c=catColor(it.category),exp=isExpired(
       '<div class="sub"><span class="au">@'+hl(it.author||'未知作者')+'</span><span>❤ '+esc(it.likes||'0')+'</span></div>'+
       (exp&&it.expired_reason?'<div class="reason">⏰ '+esc(it.expired_reason)+'</div>':'')+'</div>'+
     '</a>'+xbarHTML(it)+
-    '<div class="foot"><div class="status">'+STATUS.map(function(s){return '<button data-s="'+s[0]+'" class="s-'+s[0]+(st===s[0]?' on':'')+'">'+s[1]+'</button>';}).join('')+'</div>'+
-    '<span class="links">'+(it.source==='douyin'&&DESK&&DESK.openDouyinApp?'<button class="dyapp" title="复制视频链接并打开抖音 PC 客户端">在抖音App打开</button>':'')+
-    '<a class="open" href="'+esc(it.url)+'" target="_blank" rel="noopener noreferrer">打开 ↗</a></span></div></article>';}
+    '<div class="foot"><div class="status">'+STATUS.map(function(s){return '<button data-s="'+s[0]+'" class="s-'+s[0]+(st===s[0]?' on':'')+'">'+s[1]+'</button>';}).join('')+'</div></div></article>';}
 function coverSrc(it){var l=it.cover_local||'';if(/^ucov:/.test(l))return DESK&&DESK.coverBase?DESK.coverBase+encodeURIComponent(l.slice(5)):(it.cover||'');return l||it.cover;}
 function thumbHTML(it){var src=coverSrc(it);
   return '<div class="thumb"><div class="ph"><span class="e">'+(EMOJI[it.category]||'🏷️')+'</span><span class="pt">'+esc(it.category)+'</span><span class="pn">暂无封面</span></div>'+
@@ -419,14 +432,25 @@ function openDouyinApp(it){
     else toast('没能打开抖音客户端，已在内置浏览器打开（链接也已复制）',5000);
   }).catch(function(e){toast('打开失败：'+(e&&e.message||e));});}
 function openPost(it){
+  if(it.source==='x'){window.open(it.url,'_blank','noopener');return;}
   if(it.source==='douyin'&&DESK&&DESK.openDouyinApp){openDouyinApp(it);return;}
   if(DESK&&DESK.openPost){DESK.openPost(it.source,it.url).then(function(){toast('已在内置浏览器打开，取消收藏后回来点「已取消」');}).catch(function(e){toast('打开失败：'+(e&&e.message||e));});}
   else window.open(it.url,'_blank','noopener');}
-function onXbar(e,after){var b=e.target.closest('.xbar button, button.dyapp');if(!b)return false;e.preventDefault();e.stopPropagation();
+function openCard(it){
+  if(it.source==='douyin'&&DESK&&DESK.openDouyinApp){openDouyinApp(it);return;}
+  window.open(it.url,'_blank','noopener');}
+function onXbar(e,after){var a=e.target.closest('a.body');
+  if(a&&!e.target.closest('button')){e.preventDefault();var ca=a.closest('.card'),ia=ca&&byKey(ca.dataset.k);if(ia)openCard(ia);return true;}
+  var b=e.target.closest('.xbar button, button.dyapp');if(!b)return false;e.preventDefault();e.stopPropagation();
   var card=b.closest('.card'),it=byKey(card.dataset.k);if(!it)return true;
   if(b.classList.contains('dyapp'))openDouyinApp(it);
   else if(b.classList.contains('x-go'))openPost(it);
   else if(b.classList.contains('x-unsave')){markUnsaved(it,'manual');toast('已标记为已取消收藏（可在「🗑 已取消」里恢复）');after();}
+  else if(b.classList.contains('x-xopen'))window.open(it.url,'_blank','noopener');
+  else if(b.classList.contains('x-xunbm')){
+    if(confirm('把这条 X 书签放进「待取消书签」列表？\n\n'+(it.title||'').slice(0,80)+'\n\n软件不会自动取消书签。之后请在 x.com 打开原帖手动取消，再回来点「已在 X 取消」。')){
+      markXPending(it);toast('已放进「🔖 待取消书签」（未在 X 上做任何操作）',5000);after();}}
+  else if(b.classList.contains('x-xundo')){unmarkXPending(it);toast('已移出待取消书签');after();}
   else if(b.classList.contains('x-keep')){keepIt(it);toast('已保留，不再提示过期');after();}
   else if(b.classList.contains('x-restore')){unmarkUnsaved(it);toast('已恢复');after();}
   return true;}
@@ -476,7 +500,7 @@ $('file').onchange=function(){var files=[].slice.call(this.files);if(!files.leng
     var added=0,updated=0;incoming.forEach(function(i){if(known[i.key])updated++;else{added++;known[i.key]=1;}});
     var store=storeGet('imported',LS_IMPORT,[]),idx={};store.forEach(function(s,i){s.key=urlKey(s.url);idx[s.key]=i;});
     incoming.forEach(function(it){var k=it.key;if(idx[k]!=null)store[idx[k]]=it;else{idx[k]=store.length;store.push(it);}});
-    var restored=0;if(st){for(var k0 in st){var k=/^(rednote|douyin)\//.test(k0)?k0:urlKey('https://'+k0);if(!STATUS_MAP[k]&&st[k0]&&st[k0]!=='unseen'){STATUS_MAP[k]=st[k0];restored++;}}storeSet('status',LS_STATUS,STATUS_MAP);}
+    var restored=0;if(st){for(var k0 in st){var k=/^(rednote|douyin|x)\//.test(k0)?k0:urlKey('https://'+k0);if(!STATUS_MAP[k]&&st[k0]&&st[k0]!=='unseen'){STATUS_MAP[k]=st[k0];restored++;}}storeSet('status',LS_STATUS,STATUS_MAP);}
     if(storeSet('imported',LS_IMPORT,store)){rebuild();reset();
       toast('导入完成：新增 '+added+' 条，更新 '+updated+' 条'+(restored?'，恢复状态 '+restored+' 条':'')+'（已看/待做状态都保留了）');}
   });};

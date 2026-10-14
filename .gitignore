@@ -3,6 +3,7 @@ electron/dist
 electron/app
 covers/
 data/*.txt
+!data/*.sample.txt
 data.json
 index.html
 debug/
@@ -10,3 +11,5 @@ debug/
 expired_candidates.csv
 __pycache__/
 *.pyc
+# 个人分类规则（从 rules.example.json 复制后自己改），不要提交
+rules.json

@@ -1,0 +1,3 @@
+示例：周末做了一个小工具，记录每天的阅读进度 | @example_user1 | https://x.com/example_user1/status/1000000000000000001 | 2.7K | image |  | https://pbs.twimg.com/media/EXAMPLE001?format=jpg&name=small
+ | @example_user2 | https://x.com/example_user2/status/1000000000000000002 | 41 | video |  | https://pbs.twimg.com/media/EXAMPLE002?format=jpg&name=small
+Sample post about cooking pasta at home | @example_user3 | https://x.com/example_user3/status/1000000000000000003 | 154 | image |  | 
