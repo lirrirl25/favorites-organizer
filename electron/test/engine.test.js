@@ -6,7 +6,7 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const E = require('../lib/engine');
 const ROOT = path.join(__dirname, '..', '..');
-const RULES = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules.json'), 'utf8'));
+const RULES = JSON.parse(fs.readFileSync(path.join(ROOT, 'rules.example.json'), 'utf8'));
 // 全部是虚构样本，不读取 data.json / debug/
 const SAMPLE = [
   { id: 'rednote_6aaa00000000000000000001', key: 'rednote/6aaa00000000000000000001', source: 'rednote', title: '示例已有笔记：美甲', author: '示例作者甲', board: '' },
@@ -26,18 +26,19 @@ const dyAweme = (id, desc, extra = {}) => Object.assign({
 
 test('分类：JS 版与 parse.py 对示例条目结果一致', () => {
   const samples = [
-    { title: '示例：猫眼美甲教程', author: '示例作者甲', nid: '6aaa00000000000000000001', board: '' },
-    { title: '示例：减脂餐一周', author: '示例作者乙', nid: '6aaa00000000000000000002', board: '' },
-    { title: '示例：随便看看', author: '示例作者丙', nid: '7600000000000000101', board: '瘦' },
-    { title: '示例：随便看看', author: '示例作者-蒙特利尔', nid: '6aaa00000000000000000003', board: '' },
-    { title: '示例：随便看看', author: '示例作者丁', nid: '6aaa00000000000000000004', board: '起号' },
+    { title: '示例：番茄意面食谱', author: '示例作者甲', nid: '6aaa00000000000000000001', board: '' },
+    { title: '示例：秋季通勤穿搭', author: '示例作者乙', nid: '6aaa00000000000000000002', board: '' },
+    { title: '示例：随便看看', author: '示例作者丙', nid: '7600000000000000101', board: '学习' },
+    { title: '示例：随便看看', author: '示例作者-tech', nid: '6aaa00000000000000000003', board: '' },
+    { title: '示例：随便看看', author: '示例作者丁', nid: '6aaa00000000000000000004', board: '想去' },
     { title: '示例：Cursor 做网站', author: '示例作者戊', nid: '6aaa00000000000000000005', board: '' },
   ];
   const py = spawnSync('python3', ['-c', `
 import json, sys
 sys.path.insert(0, sys.argv[1])
 from parse import categorize, load_rules
-rules = load_rules()
+import os
+rules = load_rules(os.path.join(sys.argv[1], 'rules.example.json'))
 samples = json.loads(sys.stdin.read())
 json.dump([categorize(s["title"], s["author"], s["nid"], rules, s["board"]) for s in samples], sys.stdout)
 `, ROOT], { input: JSON.stringify(samples), encoding: 'utf8' });
@@ -45,7 +46,7 @@ json.dump([categorize(s["title"], s["author"], s["nid"], rules, s["board"]) for 
   const fromPy = JSON.parse(py.stdout);
   const fromJs = samples.map((s) => E.categorize(RULES, s.title, s.author, s.nid, s.board));
   assert.deepStrictEqual(fromJs, fromPy);
-  assert.deepStrictEqual(fromJs, ['美甲', '健身减脂/生酮', '健身减脂/生酮', '蒙城/加拿大生活', '创业/投资', 'AI/编程']);
+  assert.deepStrictEqual(fromJs, ['美食', '穿搭', '学习/职场', '科技/AI', '旅行', '科技/AI']);
 });
 
 test('RedNote 收藏接口解析', () => {
@@ -116,8 +117,8 @@ test('合并：新条目排最前且保持页面顺序；已有条目只打补�
   assert.strictEqual(m1.patched, 1);
   const [a, b, p] = synced;
   assert.ok(a.order < 0 && a.order < b.order, '最新的排在最前');
-  assert.strictEqual(a.category, '健身减脂/生酮');
-  assert.strictEqual(b.category, 'AI/编程');
+  assert.strictEqual(a.category, '美食');
+  assert.strictEqual(b.category, '科技/AI');
   assert.ok(p._patch && p.key === existing.key && !('category' in p) && !('order' in p), '已有条目只写补丁');
   // 第二次同步：之前新增的变成已知，再来一条更新的
   const known2 = known.concat(m1.addedKeys);
@@ -218,3 +219,5 @@ test('待确认：buildBatch 不碰已知 / 已删除的；applyBatches 支持�
   const r3 = E.applyBatches(r.synced, r.marks, [b], [], 2);
   assert.strictEqual(r3.added, 0);
 });
+
+

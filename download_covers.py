@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-REFERER = {"rednote": "https://www.rednote.com/", "douyin": "https://www.douyin.com/"}
+REFERER = {"rednote": "https://www.rednote.com/", "douyin": "https://www.douyin.com/", "x": "https://x.com/"}
 
 
 def sniff(b):

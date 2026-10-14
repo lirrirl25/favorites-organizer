@@ -12,7 +12,10 @@ def key_of(url):
 data_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "data.json")
 out_path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(HERE, "index.html")
 data = json.load(open(data_path, encoding="utf-8"))
-rules = json.load(open(os.path.join(HERE, "rules.json"), encoding="utf-8"))
+rules_path = os.path.join(HERE, "rules.json")
+if not os.path.exists(rules_path):  # 没有个人规则时用通用示例
+    rules_path = os.path.join(HERE, "rules.example.json")
+rules = json.load(open(rules_path, encoding="utf-8"))
 exp_path = os.path.join(HERE, "expired_candidates.csv")
 n_exp = 0
 if os.path.exists(exp_path):
@@ -33,3 +36,5 @@ tpl = open(os.path.join(HERE, "template.html"), encoding="utf-8").read()
 html = tpl.replace("/*__DATA__*/", safe(data)).replace("/*__RULES__*/", safe(rules))
 open(out_path, "w", encoding="utf-8").write(html)
 print(f"已生成 {out_path}（{len(data)} 条，过期标记 {n_exp} 条，{len(html)//1024} KB）", file=sys.stderr)
+
+
