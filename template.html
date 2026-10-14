@@ -299,9 +299,11 @@ function rebuild(){
   ITEMS=list;}
 function statusOf(it){return STATUS_MAP[it.key]||'unseen';}
 /* ---------- 过期 / 已取消收藏 标记（userData/marks.json） ---------- */
-var MARKS=storeGet('marks',LS_MARKS,{unsaved:{},kept:{}});MARKS.unsaved=MARKS.unsaved||{};MARKS.kept=MARKS.kept||{};MARKS.xpending=MARKS.xpending||{};
+var MARKS=storeGet('marks',LS_MARKS,{unsaved:{},kept:{}});MARKS.unsaved=MARKS.unsaved||{};MARKS.kept=MARKS.kept||{};MARKS.xpending=MARKS.xpending||{};MARKS.gone=MARKS.gone||{};
+(function(){var mv=0;Object.keys(MARKS.unsaved).forEach(function(k){var m=MARKS.unsaved[k];if(m&&m.by==='sync'){MARKS.gone[k]={by:'sync',at:m.at||Date.now()};delete MARKS.unsaved[k];mv++;}});if(mv&&typeof saveMarks==='function')setTimeout(saveMarks,0);})();
 function saveMarks(){storeSet('marks',LS_MARKS,MARKS);}
 function isUnsaved(it){return !!MARKS.unsaved[it.key];}
+function isGone(it){return !!(MARKS.gone&&MARKS.gone[it.key]);}
 function isExpired(it){return !!it.expired&&!MARKS.kept[it.key]&&!isUnsaved(it);}
 function markUnsaved(it,by){MARKS.unsaved[it.key]={by:by||'manual',at:Date.now()};saveMarks();}
 function unmarkUnsaved(it){delete MARKS.unsaved[it.key];saveMarks();}
@@ -327,7 +329,7 @@ function passBase(it,skip){
   if(skip!=='view'){
     if(F.view==='unsaved'){if(!isUnsaved(it))return false;}
     else if(isUnsaved(it))return false;
-    if(F.view==='expired'&&!isExpired(it))return false;
+    if(F.view==='expired'&&!isExpired(it)&&!isGone(it))return false;
     if(F.view==='xpending'&&!isXPending(it))return false;}
   if(skip!=='source'&&F.source!=='all'&&it.source!==F.source)return false;
   if(skip!=='type'&&F.type!=='all'&&it.type!==F.type)return false;
@@ -369,15 +371,15 @@ function renderFilters(){
   var all=ITEMS.reduce(function(m,i){m[i.category]=1;return m;},{});
   cats=cats.filter(function(c){return all[c];});
   cats.sort(function(a,b){if(a==='其他')return 1;if(b==='其他')return -1;return (cc[b]||0)-(cc[a]||0);});
-  var vc=countBy('view',function(i){return isUnsaved(i)?'unsaved':(isExpired(i)?'expired':'normal');});
-  var special='<button class="chip special '+(F.view==='expired'?'on':'')+'" data-v="expired" title="已过期 / 可能过期的收藏">⏰ 过期<span class="n">'+(vc.expired||0)+'</span></button>'+
+  var vc=countBy('view',function(i){return isUnsaved(i)?'unsaved':((isExpired(i)||isGone(i))?'expired':'normal');});
+  var special='<button class="chip special '+(F.view==='expired'?'on':'')+'" data-v="expired" title="已过期 / 可能过期 / 同步发现可能已取消的收藏">⏰ 过期<span class="n">'+(vc.expired||0)+'</span></button>'+
     (function(){var nx=0,toks=tokens();ITEMS.forEach(function(i){if(isXPending(i)&&passBase(i,'view')&&!isUnsaved(i)&&matchScore(i,toks))nx++;});
       return (nx||F.view==='xpending')?'<button class="chip special '+(F.view==='xpending'?'on':'')+'" data-v="xpending" title="你确认要取消的 X 书签（软件不会自动取消，需要你在 x.com 手动取消）">🔖 待取消书签<span class="n">'+nx+'</span></button>':'';})()+
     ((vc.unsaved||F.view==='unsaved')?'<button class="chip special '+(F.view==='unsaved'?'on':'')+'" data-v="unsaved" title="已取消收藏（默认隐藏）">🗑 已取消<span class="n">'+(vc.unsaved||0)+'</span></button>':'');
   $('chips').innerHTML=special+'<button class="chip '+(F.cat==='全部'?'on':'')+'" data-c="全部">全部<span class="n">'+total+'</span></button>'+
     cats.map(function(c){var n=cc[c]||0;return '<button class="chip '+(F.cat===c?'on ':'')+(n?'':'zero')+'" data-c="'+esc(c)+'">'+(EMOJI[c]||'🏷️')+' '+esc(c)+'<span class="n">'+n+'</span></button>';}).join('');
   $('chips').onclick=function(e){var b=e.target.closest('.chip');if(!b)return;
-    if(b.dataset.v){F.view=(F.view===b.dataset.v)?'normal':b.dataset.v;}else{F.cat=b.dataset.c;}reset();};
+    if(b.dataset.v){F.view=(F.view===b.dataset.v)?'normal':b.dataset.v;}else{F.cat=b.dataset.c;F.view='normal';}reset();scrollToGrid();};
   $('sort').value=F.sort;}
 function xbarHTML(it){
   if(isUnsaved(it))return '<div class="xbar"><button class="x-restore" title="撤销「已取消收藏」标记">↩ 恢复</button></div>';
@@ -391,6 +393,7 @@ function xbarHTML(it){
 function cardHTML(it){var st=statusOf(it),c=catColor(it.category),exp=isExpired(it),uns=isUnsaved(it);
   var badge=uns?'<span class="tag unsaved">已取消收藏</span>':(exp?'<span class="tag exp-'+(it.expired==='high'?'high':'medium')+'" title="'+esc(it.expired_reason)+'">'+(it.expired==='high'?'已过期':'可能过期')+'</span>':'');
   if(!uns&&isXPending(it))badge+='<span class="tag xpend">待取消书签</span>';
+  if(!uns&&isGone(it))badge+='<span class="tag exp-medium" title="同步时没在你的收藏列表里找到，可能已在 App 里取消收藏（软件不会自动删除）">可能已取消</span>';
   if(!uns&&it.synced_at&&Date.now()-it.synced_at<3*864e5)badge+='<span class="tag new">新同步</span>';
   return '<article class="card'+(st==='done'?' is-done':'')+(uns?' is-unsaved':'')+'" data-k="'+esc(it.key)+'" style="--c:'+c+'">'+
     '<a class="body" href="'+esc(it.url)+'" target="_blank" rel="noopener noreferrer" title="'+(it.source==='douyin'&&DESK&&DESK.openDouyinApp?'点击复制链接并打开抖音 PC 客户端':'点击在浏览器打开原帖')+'">'+thumbHTML(it)+
@@ -423,6 +426,7 @@ function render(){
   if(DESK&&!$('ddir')){var s=document.createElement('a');s.id='ddir';s.href='#';s.textContent='📂 数据文件夹';s.title=DESK.dataDir;s.style.cssText='color:inherit';
     s.onclick=function(e){e.preventDefault();DESK.openDataDir();};$('stats').parentNode.appendChild(s);}}
 function reset(){shown=PAGE;render();}
+function scrollToGrid(){var g=$('grid');if(!g)return;var top=g.getBoundingClientRect().top+window.scrollY-(document.querySelector('header')?document.querySelector('header').offsetHeight:0)-8;if(window.scrollY>top)window.scrollTo(0,Math.max(0,top));}
 var byKey=function(k){for(var i=0;i<ITEMS.length;i++)if(ITEMS[i].key===k)return ITEMS[i];};
 
 function openDouyinApp(it){
@@ -532,21 +536,32 @@ function renderSyncPanel(st){
         (syncing&&syncing.p===p?'<button class="btn" data-a="stop">停止</button>':'')+'</div>'+
         '<div class="prog'+(lastProg[p]&&lastProg[p].captcha?' warn':'')+'" id="prog-'+p+'">'+esc(lastProg[p]&&lastProg[p].msg||'')+'</div></div>';}).join('')+
     (function(){var n=pendingList().length,x=pendingExtra(),h=DESK.reload('historyInfo')||[];
-      return '<div class="sp"><h4>🗂 同步结果</h4><div class="st">新同步到的收藏要先确认才会加入。待确认：'+n+' 条'+(x.removed.length?'，可能已取消 '+x.removed.length+' 条':'')+'</div>'+
-        '<div class="row"><button class="btn'+(n||x.removed.length?' primary':'')+'" data-a="review">查看待确认'+(n?'（'+n+'）':'')+'</button>'+
+      return '<div class="sp"><h4>🗂 同步结果</h4><div class="st">新同步到的收藏会直接加入主列表；已不在收藏里的只标「可能已取消」，不会删除。</div>'+
+        '<div class="row">'+
         '<button class="btn" data-a="undo" '+(h.length?'':'disabled')+' title="'+(h.length?'撤销 '+esc(fmtTime(h[h.length-1].at))+' 加入的结果':'还没有加入过同步结果')+'">撤销上次同步</button></div></div>';})()+
     '<label class="sw"><input type="checkbox" id="autosync" '+(meta.autoSync?'checked':'')+'> 启动时自动同步（增量，只同步已登录的平台）</label>'+
-    '<div class="row" style="margin-top:14px;justify-content:space-between"><span class="mini"><a href="#" id="openlog">打开同步日志</a></span><button class="btn" id="m-close">关闭</button></div>';
+    '<div class="row" style="margin-top:14px;justify-content:space-between"><span class="mini"><a href="#" id="openlog">查看同步日志</a></span><button class="btn" id="m-close">关闭</button></div>';
   $('mask').classList.add('show');
   $('m-close').onclick=closeModal;
-  $('openlog').onclick=function(e){e.preventDefault();DESK.openLog();};
+  $('openlog').onclick=function(e){e.preventDefault();openLogView();};
   $('autosync').onchange=function(){var m=DESK.reload('syncmeta')||{};m.autoSync=this.checked;DESK.set('syncmeta',m);toast(this.checked?'已开启启动时自动同步':'已关闭启动时自动同步');};
   $('modal').onclick=function(e){var b=e.target.closest('button[data-a]');if(!b)return;var p=b.dataset.p,a=b.dataset.a;
     if(a==='login')SYNC.login(p).then(function(){setTimeout(openSyncPanel,1500);});
     else if(a==='stop')SYNC.cancel();
-    else if(a==='review')openReview();
     else if(a==='undo')undoLastSync();
     else runSync(p,a==='full'?'full':'incremental',false);};}
+function openLogView(){
+  var show=function(r){r=r||{};
+    $('modal').className='modal wide';
+    $('modal').innerHTML='<h3>📄 同步日志</h3><div class="mini">'+esc(r.path||'')+(r.truncated?'（只显示最后 256KB）':'')+'</div>'+
+      '<pre id="logtext" style="max-height:60vh;overflow:auto;white-space:pre-wrap;word-break:break-all;background:#f3f2ee;border-radius:10px;padding:10px;font-size:12px;margin-top:8px">'+esc(r.text||r.error||'（日志是空的）')+'</pre>'+
+      '<div class="row" style="margin-top:12px"><button class="btn" id="log-copy">复制全部</button><button class="btn" id="log-folder">在文件夹中显示</button><button class="btn" id="log-back">返回</button><button class="btn primary" id="m-close">关闭</button></div>';
+    $('mask').classList.add('show');var pre=$('logtext');pre.scrollTop=pre.scrollHeight;
+    $('m-close').onclick=closeModal;$('log-back').onclick=openSyncPanel;
+    $('log-folder').onclick=function(){DESK.showLogFolder&&DESK.showLogFolder();};
+    $('log-copy').onclick=function(){var t=r.text||'';(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){toast('日志已复制');}).catch(function(){var s=window.getSelection(),rg=document.createRange();rg.selectNodeContents(pre);s.removeAllRanges();s.addRange(rg);document.execCommand('copy');toast('日志已复制');});};
+    $('modal').onclick=null;};
+  if(DESK&&DESK.readLog)DESK.readLog().then(show).catch(function(e){show({error:'读取日志失败：'+(e&&e.message||e)});});else show({error:'网页版没有同步日志'});}
 function openSyncPanel(){SYNC.status().then(renderSyncPanel).catch(function(){renderSyncPanel(null);});}
 function runSync(p,mode,auto){
   if(syncing){toast('正在同步'+PNAME[syncing.p]+'，请稍等');return Promise.resolve(null);}
@@ -566,13 +581,15 @@ function pendingList(){var pd=DESK?(DESK.get('pending')||{}):{};var seen={},out=
   (pd.batches||[]).forEach(function(b){(b.items||[]).forEach(function(it){if(!seen[it.key]){seen[it.key]=1;out.push(it);}});});return out;}
 function pendingExtra(){var pd=DESK?(DESK.get('pending')||{}):{},rm={},pt=0;(pd.batches||[]).forEach(function(b){(b.removed||[]).forEach(function(k){rm[k]=1;});pt+=(b.patches||[]).length;});return {removed:Object.keys(rm),patches:pt,batches:(pd.batches||[]).length};}
 function updateSyncBadge(){if(!SYNC)return;var n=pendingList().length,x=pendingExtra();
-  $('syncbtn').innerHTML='🔄<span class="t"> 账号 / 同步</span>'+((n||x.removed.length)?'<span class="pbadge">待确认 '+(n+x.removed.length)+'</span>':'');}
+  $('syncbtn').innerHTML='🔄<span class="t"> 账号 / 同步</span>';}
 function reloadMerged(){DESK.reload('synced');DESK.reload('pending');var m=DESK.reload('marks')||{};m.unsaved=m.unsaved||{};m.kept=m.kept||{};MARKS=m;rebuild();render();updateSyncBadge();}
 function applySyncResult(r){
   if(!r)return '';
   if(DESK){DESK.reload('pending');updateSyncBadge();}
-  var msg=PNAME[r.platform]+'：发现 '+r.added+' 条新收藏'+(r.added?'，已放进「待确认」':'')+(r.mode==='full'?'（读取 '+r.collected+' 条）':'');
-  if(r.removed&&r.removed.ok&&r.removed.keys.length)msg+='，'+r.removed.keys.length+' 条已不在收藏里（确认后才会标记）';
+  if(DESK)reloadMerged();
+  var ap=r.applied||{added:r.added,removed:0};
+  var msg=PNAME[r.platform]+'：'+(ap.added?'新加入 '+ap.added+' 条收藏':'没有新收藏')+(r.mode==='full'?'（读取 '+r.collected+' 条）':'');
+  if(ap.removed)msg+='，'+ap.removed+' 条已不在收藏里（已标「可能已取消」，没有删除）';
   if(r.removed&&!r.removed.ok&&r.mode==='full')msg+='（'+r.removed.reason+'）';
   if(r.error)msg+='。出错：'+r.error;else if(r.stopReason)msg+='（'+r.stopReason+'）';
   return msg;}
@@ -604,6 +621,7 @@ function undoLastSync(){var h=DESK.reload('historyInfo')||[];if(!h.length){toast
   DESK.undoSync().then(function(r){reloadMerged();if($('mask').classList.contains('show'))openSyncPanel();toast(r?'已撤销 '+fmtTime(r.at)+' 的同步':'没有可以撤销的同步');});}
 if(SYNC){
   $('syncbtn').hidden=false;$('syncbtn').onclick=openSyncPanel;updateSyncBadge();
+  if(pendingList().length||pendingExtra().batches){DESK.pending.accept([]).then(function(r){reloadMerged();if(r&&r.added)toast('已把之前同步到的 '+r.added+' 条新收藏加入列表');}).catch(function(){});}
   $('syncbar').onclick=openSyncPanel;
   SYNC.onProgress(function(p){if(!p||!p.platform)return;lastProg[p.platform]=p;panelProg(p);
     syncBar((p.captcha?'⚠️ ':'🔄 ')+PNAME[p.platform]+'：'+(p.msg||''),p.captcha);});

@@ -66,7 +66,17 @@ ipcMain.handle('backup:export', async (e, text, defaultName) => {
   return r.filePath;
 });
 ipcMain.handle('open:dataDir', () => shell.openPath(app.getPath('userData')));
-ipcMain.handle('open:log', () => shell.openPath(logFile()));
+ipcMain.handle('open:log', () => shell.showItemInFolder(logFile()));
+ipcMain.handle('open:logFolder', () => { const f = logFile(); if (fs.existsSync(f)) shell.showItemInFolder(f); else shell.openPath(path.dirname(f)); return true; });
+// 在应用内显示日志（.log 在 Windows 上常常没有关联程序）：只返回最后 256KB
+ipcMain.handle('log:read', () => {
+  const f = logFile();
+  try {
+    const st = fs.statSync(f), n = Math.min(st.size, 256 * 1024), buf = Buffer.alloc(n);
+    const fd = fs.openSync(f, 'r'); fs.readSync(fd, buf, 0, n, st.size - n); fs.closeSync(fd);
+    return { path: f, size: st.size, truncated: st.size > n, text: buf.toString('utf8') };
+  } catch (e) { return { path: f, size: 0, truncated: false, text: '', error: e.message }; }
+});
 
 // ---------- 同步 ----------
 let RULES = null;
@@ -113,7 +123,7 @@ ipcMain.handle('sync:start', async (e, p, opts) => {
   const res = await syncMgr().sync(p, { mode: opts.mode === 'full' ? 'full' : 'incremental', knownKeys: opts.knownKeys || [], localKeys: opts.localKeys || [], auto: !!opts.auto });
   return finishSync(p, res, opts);
 });
-// 同步结果不直接合并：先放进「待确认」(pending.json)，用户点「全部加入」后才写进 synced.json
+// 同步结果直接合并进 synced.json（新收藏马上出现在主列表）；远端消失的只打「可能已取消」标记
 async function finishSync(p, res, opts) {
   const pending = readJSON('pending', STORES.pending);
   pending.batches = pending.batches || []; pending.rejected = pending.rejected || [];
@@ -134,7 +144,8 @@ async function finishSync(p, res, opts) {
   batch.removed = rc && rc.ok ? rc.removed : [];
   batch.seenKeys = res.mode === 'full' && res.reachedEnd ? (res.allItems || []).map((i) => i.key) : [];
   const useful = batch.items.length || batch.patches.length || batch.removed.length || batch.seenKeys.length;
-  if (useful) { pending.batches.push(batch); writeJSON('pending', pending); }
+  let applied = { added: 0, removed: 0, restored: 0 };
+  if (useful || pending.batches.length) { pending.batches.push(batch); applied = applyPending(pending, []); }
   const meta = readJSON('syncmeta', STORES.syncmeta);
   meta.last = meta.last || {};
   meta.last[p] = { at: Date.now(), mode: res.mode, added: batch.items.length, collected: res.collected, reachedEnd: !!res.reachedEnd, stopReason: res.stopReason || res.error || '' };
@@ -145,15 +156,13 @@ async function finishSync(p, res, opts) {
     platform: p, mode: res.mode, collected: res.collected, added: batch.items.length, patched: batch.patches.length, pendingKeys: batch.items.map((i) => i.key),
     stopReason: res.stopReason, reachedEnd: !!res.reachedEnd, error: res.error || null, source: res.source, covers, stats: res.stats || null,
     removed: rc ? { ok: rc.ok, reason: rc.reason, keys: rc.removed } : null,
-    pendingTotal: pending.batches.reduce((n, b) => n + (b.items || []).length, 0),
+    pendingTotal: 0, applied,
   };
-  log(`[${p}] 放入待确认: 新增=${batch.items.length} 更新=${batch.patches.length} 封面 ok=${covers.ok} fail=${covers.fail}` + (rc ? ` 取消收藏检测: ${rc.ok ? rc.removed.length + ' 条' : rc.reason}` : ''));
+  log(`[${p}] 已直接加入: 新增=${applied.added} 可能已取消=${applied.removed} 恢复=${applied.restored} 更新=${batch.patches.length} 封面 ok=${covers.ok} fail=${covers.fail}` + (rc ? ` 取消收藏检测: ${rc.ok ? rc.removed.length + ' 条' : rc.reason}` : ''));
   return out;
 }
-// 确认：把待确认合并进 synced / marks（先存快照，方便「撤销上次同步」）
-ipcMain.handle('pending:accept', (e, excludeKeys) => {
-  const pending = readJSON('pending', STORES.pending);
-  if (!(pending.batches || []).length) return { added: 0, removed: 0, restored: 0 };
+// 把批次合并进 synced / marks（先存快照，方便「撤销上次同步」）
+function applyPending(pending, excludeKeys) {
   const synced = readJSON('synced', []), marks = readJSON('marks', STORES.marks);
   const hist = readJSON('history', []);
   hist.push({ at: Date.now(), synced: JSON.parse(JSON.stringify(synced)), marks: JSON.parse(JSON.stringify(marks)),
@@ -166,8 +175,15 @@ ipcMain.handle('pending:accept', (e, excludeKeys) => {
   pending.rejected = Array.from(new Set((pending.rejected || []).concat(ex))).slice(-5000);
   pending.batches = [];
   writeJSON('pending', pending);
-  log(`待确认已合并: 新增=${r.added} 标记已取消=${r.removed} 恢复=${r.restored} 删掉=${ex.length}`);
   return { added: r.added, removed: r.removed, restored: r.restored, excluded: ex.length };
+}
+// 兼容旧版：如果还有旧的待确认批次，直接合并
+ipcMain.handle('pending:accept', (e, excludeKeys) => {
+  const pending = readJSON('pending', STORES.pending);
+  if (!(pending.batches || []).length) return { added: 0, removed: 0, restored: 0 };
+  const r = applyPending(pending, excludeKeys || []);
+  log(`待确认已合并: 新增=${r.added} 可能已取消=${r.removed} 恢复=${r.restored}`);
+  return r;
 });
 ipcMain.handle('pending:discard', () => {
   const pending = readJSON('pending', STORES.pending);
@@ -237,7 +253,7 @@ if (!app.requestSingleInstanceLock() && !process.env.FAV_SELFTEST) {
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       { label: '文件', submenu: [
         { label: '打开数据文件夹', click: () => shell.openPath(app.getPath('userData')) },
-        { label: '打开同步日志', click: () => shell.openPath(logFile()) },
+        { label: '在文件夹中显示同步日志', click: () => shell.showItemInFolder(logFile()) },
         { type: 'separator' }, { label: '退出', role: 'quit' } ] },
       { label: '视图', submenu: [
         { label: '刷新', role: 'reload' }, { label: '放大', role: 'zoomIn' }, { label: '缩小', role: 'zoomOut' },

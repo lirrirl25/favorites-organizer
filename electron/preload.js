@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('favStore', {
   exportBackup: (text, defaultName) => ipcRenderer.invoke('backup:export', text, defaultName),
   openDataDir: () => ipcRenderer.invoke('open:dataDir'),
   openLog: () => ipcRenderer.invoke('open:log'),
+  readLog: () => ipcRenderer.invoke('log:read'),
+  showLogFolder: () => ipcRenderer.invoke('open:logFolder'),
   openPost: (platform, url) => ipcRenderer.invoke('open:post', platform, url),
   pending: {
     accept: (excludeKeys) => ipcRenderer.invoke('pending:accept', excludeKeys),
