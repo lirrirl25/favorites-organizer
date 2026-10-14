@@ -270,7 +270,7 @@ function applyPatch(synced, idx, patch) {
 function applyBatches(synced, marks, batches, excludeKeys, now) {
   now = now || Date.now();
   const ex = new Set(excludeKeys || []);
-  marks = marks || {}; marks.unsaved = marks.unsaved || {}; marks.kept = marks.kept || {};
+  marks = marks || {}; marks.unsaved = marks.unsaved || {}; marks.kept = marks.kept || {}; marks.gone = marks.gone || {};
   const idx = new Map(); synced.forEach((s, i) => idx.set(s.key, i));
   let added = 0, removed = 0, restored = 0; const addedKeys = [];
   for (const b of batches || []) {
@@ -281,8 +281,12 @@ function applyBatches(synced, marks, batches, excludeKeys, now) {
       added++; addedKeys.push(it.key);
     }
     for (const p of b.patches || []) applyPatch(synced, idx, p);
-    for (const k of b.removed || []) if (!ex.has(k) && !marks.unsaved[k]) { marks.unsaved[k] = { by: 'sync', at: now }; removed++; }
-    for (const k of b.seenKeys || []) { const mk = marks.unsaved[k]; if (mk && mk.by === 'sync') { delete marks.unsaved[k]; restored++; } }
+    // 远端已不在收藏里的：只打「可能已取消」标记，不隐藏、不删除
+    for (const k of b.removed || []) if (!ex.has(k) && !marks.gone[k] && !marks.unsaved[k]) { marks.gone[k] = { by: 'sync', at: now }; removed++; }
+    for (const k of b.seenKeys || []) {
+      if (marks.gone[k]) { delete marks.gone[k]; restored++; }
+      const mk = marks.unsaved[k]; if (mk && mk.by === 'sync') { delete marks.unsaved[k]; restored++; }
+    }
   }
   return { synced, marks, added, removed, restored, addedKeys };
 }

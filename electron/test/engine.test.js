@@ -212,7 +212,9 @@ test('待确认：buildBatch 不碰已知 / 已删除的；applyBatches 支持�
   const marks = { unsaved: { 'douyin/2222222222222222222': { by: 'sync' }, 'douyin/3333333333333333333': { by: 'manual' } }, kept: {} };
   const r = E.applyBatches([], marks, [b], [], 1);
   assert.strictEqual(r.added, 1); assert.strictEqual(r.removed, 1); assert.strictEqual(r.restored, 1);
-  assert.ok(r.marks.unsaved['douyin/1111111111111111111'] && !r.marks.unsaved['douyin/2222222222222222222'] && r.marks.unsaved['douyin/3333333333333333333']);
+  // 远端消失的只标「可能已取消」(marks.gone)，绝不自动标成已取消收藏
+  assert.ok(r.marks.gone['douyin/1111111111111111111'] && !r.marks.unsaved['douyin/1111111111111111111']);
+  assert.ok(!r.marks.unsaved['douyin/2222222222222222222'] && r.marks.unsaved['douyin/3333333333333333333']);
   const r2 = E.applyBatches([], { unsaved: {}, kept: {} }, [b], ['rednote/6ae000000000000000000001'], 1);
   assert.strictEqual(r2.added, 0);
   // 重复确认不会重复添加
@@ -221,3 +223,20 @@ test('待确认：buildBatch 不碰已知 / 已删除的；applyBatches 支持�
 });
 
 
+
+test('同步合并：新条目直接进 synced 且去重；可能已取消的再次出现会自动清除标记', () => {
+  const inc = E.parsePayload('douyin', { status_code: 0, aweme_list: [dyAweme('7600000000000002001', '示例：新视频甲'), dyAweme('7600000000000002002', '示例：新视频乙')], has_more: 0 }).items;
+  const b1 = E.buildBatch(inc, [], [], RULES, 1_800_000_000_000, { platform: 'douyin' });
+  b1.removed = ['douyin/7600000000000002999'];
+  const r1 = E.applyBatches([], { unsaved: {}, kept: {} }, [b1], [], 1);
+  assert.strictEqual(r1.added, 2);
+  assert.deepStrictEqual(r1.synced.map((s) => s.key).sort(), ['douyin/7600000000000002001', 'douyin/7600000000000002002']);
+  assert.ok(r1.marks.gone['douyin/7600000000000002999']);
+  assert.ok(!r1.marks.unsaved['douyin/7600000000000002999']);
+  // 同一批再合并一次不重复
+  const r2 = E.applyBatches(r1.synced, r1.marks, [b1], [], 2);
+  assert.strictEqual(r2.added, 0); assert.strictEqual(r2.synced.length, 2);
+  // 全量同步又看到了它 → 清除「可能已取消」
+  const r3 = E.applyBatches(r2.synced, r2.marks, [{ items: [], patches: [], removed: [], seenKeys: ['douyin/7600000000000002999'] }], [], 3);
+  assert.ok(!r3.marks.gone['douyin/7600000000000002999']); assert.strictEqual(r3.restored, 1);
+});
