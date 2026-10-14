@@ -166,8 +166,14 @@ class SyncManager {
   }
   async openPost(platform, url) {
     if (!this.allowed(platform, url)) throw new Error('不支持的链接');
-    if (this.running && this.running.platform === platform) throw new Error('正在同步，请等同步结束再打开');
-    const w = this.window(platform);
+    let w;
+    if (this.running && this.running.platform === platform) {
+      // 正在同步：另开一个同会话的窗口，不打断同步窗口
+      w = new BrowserWindow({ width: 1180, height: 860, title: platform === 'rednote' ? 'RedNote' : '抖音', autoHideMenuBar: true,
+        webPreferences: { session: this.ses(platform), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+      w.webContents.setUserAgent(this.ua());
+      w.webContents.setWindowOpenHandler(({ url: u }) => { if (this.allowed(platform, u)) w.loadURL(u).catch(() => {}); return { action: 'deny' }; });
+    } else w = this.window(platform);
     await this.load(w, url, platform).catch((e) => this.log(`[${platform}] 打开帖子失败 ${e.message}`));
     return true;
   }
