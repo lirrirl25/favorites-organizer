@@ -116,6 +116,60 @@ function dyItem(o) {
   };
 }
 
+/* ---------------- X 书签解析（Bookmarks GraphQL） ---------------- */
+function looksLikeTweet(o) {
+  if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
+  return /^\d{5,25}$/.test(str(o.rest_id)) && o.legacy && typeof o.legacy === 'object' && ('full_text' in o.legacy || 'created_at' in o.legacy);
+}
+function xUser(o) {
+  const u = (((o.core || {}).user_results || {}).result) || {};
+  return str(first((u.core || {}).screen_name, (u.legacy || {}).screen_name));
+}
+function xItem(o) {
+  const id = str(o.rest_id), lg = o.legacy || {};
+  const sn = xUser(o);
+  const media = ((lg.extended_entities || lg.entities || {}).media) || [];
+  const m0 = media[0] || null;
+  const isVideo = media.some((m) => m.type === 'video' || m.type === 'animated_gif');
+  let cover = m0 && m0.media_url_https ? str(m0.media_url_https) : '';
+  if (cover && !/[?&]name=/.test(cover)) cover = cover.replace(/\.(jpg|jpeg|png|webp)$/i, '') + '?format=jpg&name=medium';
+  cover = cover.replace(/name=(small|thumb|tiny|large|orig)/, 'name=medium');
+  let title = str(((o.note_tweet || {}).note_tweet_results || {}).result && o.note_tweet.note_tweet_results.result.text || lg.full_text);
+  title = title.replace(/\s*https:\/\/t\.co\/\w+\s*$/g, '').replace(/\s+/g, ' ').trim();
+  const author = sn ? '@' + sn : '';
+  if (!title) title = '[媒体帖] ' + (author || '@unknown');
+  return {
+    id: 'x_' + id, nid: id, source: 'x', key: keyOf('x', id),
+    title, author,
+    url: 'https://x.com/' + (sn || 'i/web') + '/status/' + id,
+    likes: fmtLikes(lg.favorite_count != null ? +lg.favorite_count : ''), likes_num: parseLikes(lg.favorite_count || 0),
+    type: isVideo ? 'video' : 'image',
+    cover, board: '',
+  };
+}
+function parseX(json, res) {
+  const found = [];
+  // 只看时间线里的推文条目（不收「推荐」「广告」之类的模块）
+  const tl = (((json.data || {}).bookmark_timeline_v2 || (json.data || {}).bookmark_timeline || {}).timeline) || null;
+  const errs = Array.isArray(json.errors) ? json.errors : [];
+  if (errs.some((e) => +e.code === 88 || /rate limit/i.test(str(e.message)))) res.blocked = true;
+  res.code = errs.length ? errs[0].code : null;
+  if (!tl) return [];
+  let tweets = 0, bottom = false;
+  for (const ins of tl.instructions || []) {
+    for (const en of ins.entries || (ins.entry ? [ins.entry] : [])) {
+      const eid = str(en.entryId);
+      if (/^cursor-bottom/.test(eid)) { bottom = true; continue; }
+      if (!/^tweet-/.test(eid)) continue;
+      let r = ((((en.content || {}).itemContent || {}).tweet_results) || {}).result;
+      if (r && r.__typename === 'TweetWithVisibilityResults') r = r.tweet;
+      if (looksLikeTweet(r)) { found.push(r); tweets++; }
+    }
+  }
+  res.hasMore = tweets > 0 && bottom;
+  return found;
+}
+
 /* 深度遍历任意 JSON，找出看起来像笔记/视频的对象（防御式：接口结构改了也尽量能用） */
 function walk(obj, test, out, depth) {
   if (depth > 12 || !obj || typeof obj !== 'object') return;
@@ -128,7 +182,9 @@ function parsePayload(platform, json, opts = {}) {
   const res = { items: [], hasMore: null, blocked: false, code: null };
   if (!json || typeof json !== 'object') return res;
   const found = [];
-  if (platform === 'rednote') {
+  if (platform === 'x') {
+    res.items = parseX(json, res).map(xItem);
+  } else if (platform === 'rednote') {
     walk(json, looksLikeRnNote, found, 0);
     res.items = found.map((o) => rnItem(o, opts.base));
     const d = json.data || {};
@@ -215,6 +271,7 @@ function detectRemoved(localKeysOfSource, seenKeys, reachedEnd, opts = {}) {
 /* ---------------- 来源校验（防止把推荐流 / 其他页面的内容当成收藏） ---------------- */
 const FAV_API = {
   rednote: [/\/api\/sns\/web\/v\d+\/note\/collect\/page(\?|$)/],
+  x: [/^\/i\/api\/graphql\/[\w-]+\/Bookmarks(\?|$)/],
   douyin: [/\/aweme\/v\d+\/web\/aweme\/listcollection\/?(\?|$)/, /\/aweme\/v\d+\/web\/collects\/video\/list\/?(\?|$)/],
 };
 function isFavApi(platform, url, patterns) {
@@ -227,6 +284,7 @@ function isFavApi(platform, url, patterns) {
 function isFavPage(platform, pageUrl, opts = {}) {
   let u; try { u = new URL(pageUrl); } catch (e) { return false; }
   if (opts.base) { try { if (new URL(opts.base).host !== u.host) return false; } catch (e) {} }
+  if (platform === 'x') return /^\/i\/bookmarks\/?$/.test(u.pathname);
   if (platform === 'douyin') {
     return /^\/user\/self\/?$/.test(u.pathname) && u.searchParams.get('showTab') === 'favorite_collection';
   }
@@ -291,4 +349,4 @@ function applyBatches(synced, marks, batches, excludeKeys, now) {
   return { synced, marks, added, removed, restored, addedKeys };
 }
 
-module.exports = { isFavApi, isFavPage, coverSourceTag, sanitizeItems, buildBatch, applyBatches, norm, kwMatch, categorize, parseLikes, fmtLikes, noteIdFromUrl, parsePayload, mergeSynced, shouldStopIncremental, detectRemoved, rnItem, dyItem };
+module.exports = { isFavApi, isFavPage, coverSourceTag, sanitizeItems, buildBatch, applyBatches, norm, kwMatch, categorize, parseLikes, fmtLikes, noteIdFromUrl, parsePayload, mergeSynced, shouldStopIncremental, detectRemoved, rnItem, dyItem, xItem };
