@@ -281,6 +281,8 @@ test('X：只认 Bookmarks 接口和书签页', () => {
   assert.ok(!E.isFavApi('x', 'https://x.com/i/api/graphql/AbC/DeleteBookmark'));
   assert.ok(E.isFavPage('x', 'https://x.com/i/bookmarks', { base: 'https://x.com' }));
   assert.ok(!E.isFavPage('x', 'https://x.com/home', { base: 'https://x.com' }));
+  assert.ok(E.isFavPage('x', 'https://x.com/i/history', { base: 'https://x.com' }));
+  assert.ok(!E.isFavPage('x', 'https://x.com/i/history/likes', { base: 'https://x.com' }));
 });
 test('X：新书签直接合并，已有的不重复', () => {
   const R2 = { rules: [['美食', ['意面']]], author_rules: [], board_rules: [] };
