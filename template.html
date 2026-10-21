@@ -39,7 +39,11 @@ header{position:sticky;top:0;z-index:20;background:rgba(246,245,242,.92);backdro
 .seg button .n{color:var(--muted);font-weight:400;margin-left:3px;font-size:12px}
 .flabel{font-size:12px;color:var(--muted);margin-right:-8px}
 select.sort{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 10px;font-size:13px;color:var(--ink)}
-.chips{display:flex;flex-wrap:wrap;gap:8px;padding:2px 0 12px}
+.chipwrap{display:flex;align-items:flex-start;gap:8px;padding:2px 0 12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;flex:1;min-width:0}
+.chipwrap.collapsed .chips{overflow:hidden}
+.chiptog{flex:none;border:1px solid #e5e5e5;background:#fff;border-radius:999px;padding:5px 10px;font-size:12px;color:#666;cursor:pointer}
+.chiptog:hover{background:#f5f5f5}.chiptog[hidden]{display:none}
 .chip{flex:none;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:13px;color:#444;transition:.15s}
 .chip .n{color:var(--muted);margin-left:4px;font-size:12px}
 .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
@@ -196,7 +200,7 @@ main{padding:16px 0 60px}
         <option value="shuffle">随机打乱</option>
       </select>
     </div>
-    <div class="chips" id="chips"></div>
+    <div class="chipwrap" id="chipwrap"><div class="chips" id="chips"></div><button class="chiptog" id="chiptog" title="展开 / 收起分类">▼</button></div>
   </div>
 </header>
 <main class="wrap">
@@ -383,7 +387,22 @@ function renderFilters(){
     cats.map(function(c){var n=cc[c]||0;return '<button class="chip '+(F.cat===c?'on ':'')+(n?'':'zero')+'" data-c="'+esc(c)+'">'+(EMOJI[c]||'🏷️')+' '+esc(c)+'<span class="n">'+n+'</span></button>';}).join('');
   $('chips').onclick=function(e){var b=e.target.closest('.chip');if(!b)return;
     if(b.dataset.v){F.view=(F.view===b.dataset.v)?'normal':b.dataset.v;}else{F.cat=b.dataset.c;F.view='normal';}reset();scrollToGrid();};
+  layoutChips();
   $('sort').value=F.sort;}
+// 分类栏：默认只显示一行，▼ 展开全部；折叠时选中的分类若在后面，挪到第一行显示
+var CHIP_OPEN=localStorage.getItem('chipsOpen')==='1';
+function layoutChips(){var w=$('chipwrap'),c=$('chips'),tg=$('chiptog');if(!w)return;
+  w.classList.remove('collapsed');c.style.maxHeight='';
+  var f=c.firstElementChild;if(!f){tg.hidden=true;return;}
+  var rowH=f.offsetHeight,top0=f.offsetTop,multi=[].some.call(c.children,function(x){return x.offsetTop>top0+2;});
+  tg.hidden=!multi;if(!multi)return;
+  var on=c.querySelector('.chip.on'),hiddenOn=on&&on.offsetTop>top0+2;
+  var open=CHIP_OPEN;
+  if(!open){if(hiddenOn){var all=c.querySelector('[data-c="全部"]');c.insertBefore(on,all?all.nextSibling:c.firstChild);}
+    w.classList.add('collapsed');c.style.maxHeight=rowH+'px';}
+  tg.textContent=open?'▲':'▼';tg.title=open?'收起分类':'展开全部分类';}
+document.addEventListener('DOMContentLoaded',function(){var tg=$('chiptog');if(tg)tg.onclick=function(){var open=!$('chipwrap').classList.contains('collapsed');CHIP_OPEN=!open;localStorage.setItem('chipsOpen',CHIP_OPEN?'1':'0');layoutChips();};});
+window.addEventListener('resize',function(){layoutChips();});
 function xbarHTML(it){
   if(isUnsaved(it))return '<div class="xbar"><button class="x-restore" title="撤销「已取消收藏」标记">↩ 恢复</button></div>';
   if(it.source==='x'){
