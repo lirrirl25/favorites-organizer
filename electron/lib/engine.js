@@ -284,7 +284,8 @@ function isFavApi(platform, url, patterns) {
 function isFavPage(platform, pageUrl, opts = {}) {
   let u; try { u = new URL(pageUrl); } catch (e) { return false; }
   if (opts.base) { try { if (new URL(opts.base).host !== u.host) return false; } catch (e) {} }
-  if (platform === 'x') return /^\/i\/bookmarks\/?$/.test(u.pathname);
+  // 2026-10 起 X 把 /i/bookmarks 重定向到 /i/history（「历史」页的 Bookmarks 标签；/i/history/likes 是喜欢，不算）
+  if (platform === 'x') return /^\/i\/(bookmarks|history)\/?$/.test(u.pathname);
   if (platform === 'douyin') {
     return /^\/user\/self\/?$/.test(u.pathname) && u.searchParams.get('showTab') === 'favorite_collection';
   }
