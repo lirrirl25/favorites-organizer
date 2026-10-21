@@ -540,15 +540,15 @@ var tt;function toast(m,ms){var t=$('toast');t.textContent=m;t.classList.add('sh
 
 /* ---------- 账号 / 同步（仅桌面版） ---------- */
 var SYNC=DESK&&DESK.sync, syncing=null, lastProg={};
-var PNAME={rednote:'RedNote',douyin:'抖音'};
+var PNAME={rednote:'RedNote',douyin:'抖音',x:'X'};
 function fmtTime(t){if(!t)return '从未同步';var d=new Date(t);return d.toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 function syncBar(msg,warn){var b=$('syncbar');if(!msg){b.classList.remove('show');return;}b.textContent=msg;b.classList.toggle('warn',!!warn);b.classList.add('show');}
 function panelProg(p){var el=$('prog-'+p.platform);if(el){el.textContent=p.msg||'';el.classList.toggle('warn',!!p.captcha);}}
 function renderSyncPanel(st){
   var meta=DESK.reload('syncmeta')||{};var last=meta.last||{};
   $('modal').className='modal wide';
-  $('modal').innerHTML='<h3>🔄 账号 / 同步</h3><div class="mini">第一次使用先点「登录」，在弹出的窗口里用手机 App 扫码；之后会记住登录。同步时窗口会自动慢慢往下滚动，请不要关掉它。</div>'+
-    ['rednote','douyin'].map(function(p){var l=last[p]||{};
+  $('modal').innerHTML='<h3>🔄 账号 / 同步</h3><div class="mini">第一次使用先点「登录」，在弹出的窗口里登录（RedNote / 抖音用手机 App 扫码，X 用账号登录）；之后会记住登录。同步在后台进行，只有需要登录或验证时才会弹出窗口。</div>'+
+    ['rednote','douyin','x'].map(function(p){var l=last[p]||{};
       return '<div class="sp"><h4><span class="dot '+(st&&st[p]?'on':'')+'"></span>'+PNAME[p]+'<span class="st">'+(st&&st[p]?'已登录':'未登录')+'</span></h4>'+
         '<div class="st">上次同步：'+fmtTime(l.at)+(l.at?'（'+(l.mode==='full'?'全量':'增量')+'，新增 '+(l.added||0)+' 条'+(l.stopReason?'，'+esc(l.stopReason):'')+'）':'')+'</div>'+
         '<div class="row"><button class="btn" data-a="login" data-p="'+p+'">'+(st&&st[p]?'打开网站':'登录')+'</button>'+
@@ -644,7 +644,7 @@ if(SYNC){
     syncBar((p.captcha?'⚠️ ':'🔄 ')+PNAME[p.platform]+'：'+(p.msg||''),p.captcha);});
   var meta0=DESK.get('syncmeta')||{};
   if(meta0.autoSync&&!window.__FAV_NO_AUTOSYNC){setTimeout(function(){SYNC.status().then(function(st){
-    var ps=['rednote','douyin'].filter(function(p){return st[p];});
+    var ps=['rednote','douyin','x'].filter(function(p){return st[p];});
     ps.reduce(function(pr,p){return pr.then(function(){return runSync(p,'incremental',true);});},Promise.resolve());});},4000);}
 }
 

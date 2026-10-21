@@ -240,3 +240,55 @@ test('同步合并：新条目直接进 synced 且去重；可能已取消的再
   const r3 = E.applyBatches(r2.synced, r2.marks, [{ items: [], patches: [], removed: [], seenKeys: ['douyin/7600000000000002999'] }], [], 3);
   assert.ok(!r3.marks.gone['douyin/7600000000000002999']); assert.strictEqual(r3.restored, 1);
 });
+
+/* ---------- X 书签（虚构数据） ---------- */
+function xTweet(id, sn, text, opts = {}) {
+  const media = opts.media ? [{ type: opts.video ? 'video' : 'photo', media_url_https: 'https://pbs.twimg.com/media/FAKE' + id + '.jpg' }] : undefined;
+  return { entryId: 'tweet-' + id, content: { itemContent: { tweet_results: { result: Object.assign({ __typename: 'Tweet', rest_id: id,
+    core: { user_results: { result: { core: { screen_name: sn }, legacy: {} } } },
+    legacy: { full_text: text, created_at: 'Mon Jan 01 00:00:00 +0000 2024', favorite_count: opts.likes || 0, extended_entities: media ? { media } : undefined } }, opts.wrap ? {} : {}) } } } };
+}
+function xPage(entries, bottom = true) {
+  const all = entries.slice();
+  if (bottom) all.push({ entryId: 'cursor-bottom-1', content: { value: 'FAKECURSOR' } });
+  return { data: { bookmark_timeline_v2: { timeline: { instructions: [{ type: 'TimelineAddEntries', entries: all }] } } } };
+}
+test('X：Bookmarks 接口解析成和 x_bookmarks.txt 一样的条目', () => {
+  const j = xPage([xTweet('1000000000000000101', 'demo_a', '示例：周末做的番茄意面 https://t.co/abcd123', { media: true, likes: 2700 }),
+    xTweet('1000000000000000102', 'demo_b', '', { media: true, video: true }),
+    { entryId: 'who-to-follow-1', content: {} }]);
+  const r = E.parsePayload('x', j);
+  assert.strictEqual(r.items.length, 2);
+  const a = r.items[0];
+  assert.strictEqual(a.key, 'x/1000000000000000101');
+  assert.strictEqual(a.source, 'x');
+  assert.strictEqual(a.url, 'https://x.com/demo_a/status/1000000000000000101');
+  assert.strictEqual(a.author, '@demo_a');
+  assert.strictEqual(a.title, '示例：周末做的番茄意面');
+  assert.ok(/name=medium/.test(a.cover), a.cover);
+  assert.strictEqual(a.type, 'image');
+  assert.strictEqual(r.items[1].type, 'video');
+  assert.strictEqual(r.items[1].title, '[媒体帖] @demo_b');
+  assert.strictEqual(r.hasMore, true);
+});
+test('X：空页 = 到底；限流 code 88 = blocked', () => {
+  assert.strictEqual(E.parsePayload('x', xPage([], true)).hasMore, false);
+  assert.strictEqual(E.parsePayload('x', { errors: [{ code: 88, message: 'Rate limit exceeded' }] }).blocked, true);
+});
+test('X：只认 Bookmarks 接口和书签页', () => {
+  assert.ok(E.isFavApi('x', 'https://x.com/i/api/graphql/AbC-12_x/Bookmarks?variables=%7B%7D'));
+  assert.ok(!E.isFavApi('x', 'https://x.com/i/api/graphql/AbC/HomeTimeline?variables=1'));
+  assert.ok(!E.isFavApi('x', 'https://x.com/i/api/graphql/AbC/DeleteBookmark'));
+  assert.ok(E.isFavPage('x', 'https://x.com/i/bookmarks', { base: 'https://x.com' }));
+  assert.ok(!E.isFavPage('x', 'https://x.com/home', { base: 'https://x.com' }));
+});
+test('X：新书签直接合并，已有的不重复', () => {
+  const R2 = { rules: [['美食', ['意面']]], author_rules: [], board_rules: [] };
+  const items = E.parsePayload('x', xPage([xTweet('1000000000000000101', 'demo_a', '示例：意面'), xTweet('1000000000000000103', 'demo_c', '示例：别的')])).items;
+  const b = E.buildBatch(items, ['x/1000000000000000103'], [], R2, 1700000000000, { platform: 'x' });
+  assert.strictEqual(b.items.length, 1);
+  assert.strictEqual(b.items[0].category, '美食');
+  const r = E.applyBatches([], {}, [b], [], 1700000000000);
+  assert.strictEqual(r.synced.filter((s) => !s._patch).length, 1);
+  assert.strictEqual(E.detectRemoved(['x/1', 'x/1000000000000000101'], ['x/1000000000000000101'], false).ok, false);
+});

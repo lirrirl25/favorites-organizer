@@ -47,7 +47,20 @@ const DEFAULTS = {
     endTexts: ['暂时没有更多了', '没有更多了'],
     domCoverMarker: 's=PackSourceEnum_COLLECTION',
   },
+  // X：只读书签页自己发出的 Bookmarks GraphQL 响应（只读，不点任何按钮）
+  x: {
+    partition: 'persist:x',
+    base: 'https://x.com',
+    home: 'https://x.com/home',
+    favUrl: 'https://x.com/i/bookmarks',
+    fetchGlobs: ['*/i/api/graphql/*/Bookmarks*'],
+    favPatterns: [],
+    mePatterns: [],
+    loginCookies: ['auth_token'],
+    endTexts: [],
+  },
 };
+const PNAME = { rednote: 'RedNote', douyin: '抖音', x: 'X' };
 const CAPTCHA_SELECTORS = ['#captcha-verify-image', '#captcha_container', '.captcha_verify_container', '.captcha-verify-container',
   '[id^="red-captcha"]', '.red-captcha', '.verify-wrap', '.secsdk-captcha-drag-icon', 'iframe[src*="captcha"]', 'iframe[src*="verify"]'];
 const CAPTCHA_TEXT = /拖动.{0,6}滑块|完成.{0,6}验证|安全验证|访问频次|请求过于频繁|操作太频繁|访问太频繁|Please complete the verification|slide to verify/i;
@@ -67,9 +80,9 @@ class SyncManager {
         for (const p of Object.keys(over || {})) if (cfg[p]) Object.assign(cfg[p], over[p]);
       }
     } catch (e) { this.log('sync-config.json 读取失败: ' + e.message); }
-    for (const p of ['rednote', 'douyin']) { // 仅用于本地测试：把站点指向模拟服务器
+    for (const p of ['rednote', 'douyin', 'x']) { // 仅用于本地测试：把站点指向模拟服务器
       const b = process.env['FAV_SYNC_BASE_' + p.toUpperCase()];
-      if (b) { cfg[p].base = b; cfg[p].home = b + (p === 'rednote' ? '/explore' : '/'); if (p === 'douyin') cfg[p].favUrl = b + '/user/self?showTab=favorite_collection'; }
+      if (b) { cfg[p].base = b; cfg[p].home = b + (p === 'rednote' ? '/explore' : '/'); if (p === 'douyin') cfg[p].favUrl = b + '/user/self?showTab=favorite_collection'; if (p === 'x') { cfg[p].home = b + '/home'; cfg[p].favUrl = b + '/i/bookmarks'; } }
     }
     return cfg;
   }
@@ -85,7 +98,7 @@ class SyncManager {
     if (!alive(w)) {
       delete this.wins[platform];
       w = new BrowserWindow({
-        width: 1180, height: 860, show: false, title: platform === 'rednote' ? 'RedNote' : '抖音', autoHideMenuBar: true,
+        width: 1180, height: 860, show: false, title: PNAME[platform] || platform, autoHideMenuBar: true,
         webPreferences: { session: this.ses(platform), preload: path.join(__dirname, 'sync-preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: false },
         paintWhenInitiallyHidden: true, skipTaskbar: true,
       });
@@ -134,6 +147,7 @@ class SyncManager {
     try {
       const h = new URL(url).host;
       if (process.env['FAV_SYNC_BASE_' + platform.toUpperCase()]) return true;
+      if (platform === 'x') return /(^|\.)(x\.com|twitter\.com|twimg\.com)$/.test(h);
       return platform === 'rednote' ? /(^|\.)(rednote\.com|xiaohongshu\.com|xhscdn\.com|rednotecdn\.com)$/.test(h) : /(^|\.)(douyin\.com|douyinpic\.com|bytedance\.com|snssdk\.com)$/.test(h);
     } catch (e) { return false; }
   }
@@ -170,7 +184,7 @@ class SyncManager {
     let w;
     {
       // 帖子总是另开一个可见的同会话窗口，不占用后台同步窗口
-      w = new BrowserWindow({ width: 1180, height: 860, title: platform === 'rednote' ? 'RedNote' : '抖音', autoHideMenuBar: true,
+      w = new BrowserWindow({ width: 1180, height: 860, title: PNAME[platform] || platform, autoHideMenuBar: true,
         webPreferences: { session: this.ses(platform), contextIsolation: true, nodeIntegration: false, sandbox: true } });
       w.webContents.setUserAgent(this.ua());
       w.webContents.setWindowOpenHandler(({ url: u }) => { if (this.allowed(platform, u)) w.loadURL(u).catch(() => {}); return { action: 'deny' }; });
@@ -187,7 +201,7 @@ class SyncManager {
     } catch (e) { return false; }
   }
   async status() {
-    return { rednote: await this.isLoggedIn('rednote'), douyin: await this.isLoggedIn('douyin'), running: this.running ? { platform: this.running.platform, mode: this.running.mode } : null };
+    return { rednote: await this.isLoggedIn('rednote'), douyin: await this.isLoggedIn('douyin'), x: await this.isLoggedIn('x'), running: this.running ? { platform: this.running.platform, mode: this.running.mode } : null };
   }
   cancel() { this.cancelFlag = true; }
   async flush() { for (const p of Object.keys(this.config)) { try { await this.ses(p).cookies.flushStore(); } catch (e) {} } }
@@ -250,7 +264,7 @@ class SyncManager {
   }
   onFavPage(platform, pageUrl, st) {
     const cfg = this.config[platform];
-    if (platform === 'douyin') return engine.isFavPage('douyin', pageUrl, { base: cfg.base });
+    if (platform === 'douyin' || platform === 'x') return engine.isFavPage(platform, pageUrl, { base: cfg.base });
     return engine.isFavPage('rednote', pageUrl, { base: cfg.base, uid: st.uid || undefined, favTabActive: true });
   }
 
@@ -277,7 +291,7 @@ class SyncManager {
       if (!(await this.isLoggedIn(platform))) {
         await this.load(w, cfg.home, platform);
         if (alive(w)) { w.setSkipTaskbar(false); w.show(); w.focus(); }
-        this.progress({ phase: 'login', msg: '请在弹出的窗口里扫码登录，登录后会自动继续…' });
+        this.progress({ phase: 'login', msg: platform === 'x' ? '请在弹出的窗口里登录 X，登录后会自动继续…' : '请在弹出的窗口里扫码登录，登录后会自动继续…' });
         const t0 = Date.now();
         while (!(await this.isLoggedIn(platform))) {
           check();
@@ -316,6 +330,7 @@ class SyncManager {
         }
         if (!w.webContents.debugger.isAttached()) await this.attach(w, platform);
         const cap = await this.checkCaptcha(w);
+        if (platform === 'x' && state.blocked && !cap) { result.stopReason = 'X 限流了，已停止（下次再同步，已收集的会保存）'; this.log('[x] 接口限流，停止本次同步'); break; }
         if (cap || state.blocked) {
           const ok = await this.waitCaptcha(w, platform, state, cap);
           if (!ok) { result.stopReason = '验证 / 限流没有解除，已停止（已收集的会保存）'; break; }
@@ -345,7 +360,7 @@ class SyncManager {
         if (Date.now() > deadline) { result.stopReason = '达到单次同步时间上限'; break; }
         if (Math.random() < 0.08) { await this.scrollOnce(w, -Math.round(rand(120, 260))); await sleep(jitter(800, 1500)); }
         if (sinceBreak >= nextBreak) { sinceBreak = 0; nextBreak = Math.round(rand(22, 34)); await sleep(jitter(6000, 12000)); }
-        await sleep(jitter(2000, 3000));
+        await sleep(platform === 'x' ? jitter(3500, 5500) : jitter(2000, 3000));
       }
       await realSleep(1500 * Math.max(SPEED, 0.3));
       this.finish(result, state, known, mode, localKeys);
@@ -378,6 +393,12 @@ class SyncManager {
 
   async openFavPage(w, platform, state) {
     const cfg = this.config[platform];
+    if (platform === 'x') {
+      const u = await this.load(w, cfg.favUrl, platform);
+      await sleep(jitter(2500, 3500));
+      if (!this.onFavPage('x', this.url(w), state)) throw new Error('没能打开 X 书签页（当前页面：' + shortUrl(u) + '）。可能没登录');
+      return;
+    }
     if (platform === 'douyin') {
       let u = await this.load(w, cfg.favUrl, platform);
       if (!this.onFavPage('douyin', u, state)) {
@@ -434,7 +455,7 @@ class SyncManager {
   async checkCaptcha(w) {
     if (!alive(w)) return '';
     const url = this.url(w);
-    if (/captcha|\/verify|website-login\/error/i.test(url)) return '页面跳到了验证页';
+    if (/captcha|\/verify|website-login\/error|x\.com\/account\/access/i.test(url)) return '页面跳到了验证页';
     return this.js(w, `(function(sels,reSrc){
       function vis(e){var r=e.getBoundingClientRect();var s=getComputedStyle(e);return r.width>30&&r.height>30&&s.visibility!=='hidden'&&s.display!=='none';}
       for(var i=0;i<sels.length;i++){var e=document.querySelector(sels[i]);if(e&&vis(e))return '出现了滑块验证';}
@@ -468,6 +489,7 @@ class SyncManager {
 
   /* 页面卡片读取（兜底）：只在自己的收藏页，只认带收藏标记的卡片 */
   async collectDom(w, platform, state) {
+    if (platform === 'x') return [];   // X 只用 Bookmarks 接口数据
     if (!this.onFavPage(platform, this.url(w), state)) return [];
     const cfg = this.config[platform];
     const js = platform === 'rednote' ? `(function(marker){
@@ -541,7 +563,7 @@ class SyncManager {
       const safe = String(it.id).replace(/[^0-9a-zA-Z_-]/g, '_');
       const exist = fs.readdirSync(dir).find((f) => f.startsWith(safe + '.'));
       if (exist) { it.cover_local = 'ucov:' + exist; ok++; return; }
-      const ref = it.source === 'douyin' ? 'https://www.douyin.com/' : 'https://www.rednote.com/';
+      const ref = it.source === 'douyin' ? 'https://www.douyin.com/' : it.source === 'x' ? 'https://x.com/' : 'https://www.rednote.com/';
       try {
         const r = await fetch(it.cover, { headers: { Referer: ref, 'User-Agent': this.ua(), Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8' }, signal: AbortSignal.timeout(20000) });
         if (!r.ok) throw new Error('HTTP ' + r.status);
