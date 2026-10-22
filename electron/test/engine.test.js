@@ -294,3 +294,41 @@ test('X：新书签直接合并，已有的不重复', () => {
   assert.strictEqual(r.synced.filter((s) => !s._patch).length, 1);
   assert.strictEqual(E.detectRemoved(['x/1', 'x/1000000000000000101'], ['x/1000000000000000101'], false).ok, false);
 });
+
+/* ---- v1.3.11 X 标题 / 封面 ---- */
+{
+  const user = { core: { user_results: { result: { core: { screen_name: 'someone' } } } } };
+  test('X: 带图推文用正文做标题、第一张图做封面，去掉 t.co', () => {
+    const it = E.xItem(Object.assign({ __typename: 'Tweet', rest_id: '1900000000000000001', legacy: { full_text: '分享几个最近很好用的小技巧。\n第二行 https://t.co/AbCd123', created_at: 'x',
+      extended_entities: { media: [{ type: 'photo', media_url_https: 'https://pbs.twimg.com/media/Gabc.jpg' }] } } }, user));
+    assert.equal(it.title, '分享几个最近很好用的小技巧。 第二行');
+    assert.equal(it.cover, 'https://pbs.twimg.com/media/Gabc?format=jpg&name=medium');
+    assert.equal(it.author, '@someone');
+  });
+  test('X: 长推文用 note_tweet，可见性包装会拆开', () => {
+    const r = { __typename: 'TweetWithVisibilityResults', tweet: Object.assign({ rest_id: '1900000000000000002', legacy: { full_text: '短 https://t.co/x', created_at: 'x' },
+      note_tweet: { note_tweet_results: { result: { text: '这是完整的长推文内容' } } } }, user) };
+    assert.equal(E.xItem(r).title, '这是完整的长推文内容');
+  });
+  test('X: 视频用缩略图；只有链接卡片时用卡片图', () => {
+    const v = E.xItem(Object.assign({ rest_id: '1900000000000000003', legacy: { full_text: 'v', created_at: 'x', extended_entities: { media: [{ type: 'video', media_url_https: 'https://pbs.twimg.com/ext_tw_video_thumb/1/pu/img/a.jpg' }] } } }, user));
+    assert.equal(v.type, 'video'); assert.match(v.cover, /ext_tw_video_thumb/);
+    const c = E.xItem(Object.assign({ rest_id: '1900000000000000004', legacy: { full_text: 'https://t.co/zz', created_at: 'x' },
+      card: { legacy: { binding_values: [{ key: 'thumbnail_image_large', value: { image_value: { url: 'https://pbs.twimg.com/card_img/1/a?format=jpg&name=600x314' } } }] } } }, user));
+    assert.match(c.cover, /card_img/); assert.match(c.title, /^\[媒体帖\]/);
+  });
+  test('X: 文章用文章标题和封面', () => {
+    const a = E.xItem(Object.assign({ rest_id: '1900000000000000005', legacy: { full_text: 'https://t.co/q', created_at: 'x' },
+      article: { article_results: { result: { title: '一篇 X 文章', cover_media: { media_info: { original_img_url: 'https://pbs.twimg.com/media/Art.jpg' } } } } } }, user));
+    assert.equal(a.title, '一篇 X 文章'); assert.match(a.cover, /Art\?format=jpg&name=medium/);
+  });
+  test('X: 重新同步时补上旧条目的占位标题和封面', () => {
+    const synced = [{ key: E.xItem(Object.assign({ rest_id: '1900000000000000006', legacy: { full_text: '', created_at: 'x' } }, user)).key, source: 'x', title: '[媒体帖] @someone', cover: '', category: '其他' }];
+    const inc = E.xItem(Object.assign({ rest_id: '1900000000000000006', legacy: { full_text: '真正的正文', created_at: 'x', entities: { media: [{ type: 'photo', media_url_https: 'https://pbs.twimg.com/media/R.png' }] } } }, user));
+    const b = E.buildBatch([inc], [synced[0].key], [], { rules: [], categories: [] }, 1000, { platform: 'x' });
+    assert.equal(b.items.length, 0);
+    E.applyBatches(synced, {}, [b], []);
+    assert.equal(synced[0].title, '真正的正文'); assert.match(synced[0].cover, /R\?format=png/);
+    assert.equal(synced[0].category, '其他');
+  });
+}

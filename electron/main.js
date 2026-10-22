@@ -39,7 +39,7 @@ function writeJSON(name, obj) {
   fs.renameSync(tmp, f);
   return true;
 }
-const STORES = { status: {}, imported: [], marks: { unsaved: {}, kept: {} }, synced: [], syncmeta: { autoSync: false, last: {} }, pending: { batches: [], rejected: [] }, history: [] };
+const STORES = { status: {}, imported: [], marks: { unsaved: {}, kept: {} }, synced: [], syncmeta: { autoSync: true, last: {} }, pending: { batches: [], rejected: [] }, history: [] };
 const loadAll = () => {
   const o = { dir: dataDir(), coverBase: pathToFileURL(coverDir()).href + '/' };
   for (const k of Object.keys(STORES)) if (k !== 'history') o[k] = readJSON(k, STORES[k]);
@@ -124,7 +124,9 @@ ipcMain.handle('douyin:openApp', async (e, url) => {
 ipcMain.handle('sync:start', async (e, p, opts) => {
   if (!PLATFORMS.includes(p)) throw new Error('bad platform');
   opts = opts || {};
-  const res = await syncMgr().sync(p, { mode: opts.mode === 'full' ? 'full' : 'incremental', knownKeys: opts.knownKeys || [], localKeys: opts.localKeys || [], auto: !!opts.auto });
+  // repairKeys：需要补标题/封面的旧条目（X 占位标题），增量同步时不算「已有」，这样会继续往下翻到它们
+  const repair = new Set(opts.repairKeys || []);
+  const res = await syncMgr().sync(p, { mode: opts.mode === 'full' ? 'full' : 'incremental', knownKeys: (opts.knownKeys || []).filter((k) => !repair.has(k)), localKeys: opts.localKeys || [], auto: !!opts.auto });
   return finishSync(p, res, opts);
 });
 // 同步结果直接合并进 synced.json（新收藏马上出现在主列表）；远端消失的只打「可能已取消」标记
@@ -249,6 +251,7 @@ function setupImageHeaders() {
   const rules = [
     [/xhscdn|xiaohongshu|rednote/i, 'https://www.rednote.com/'],
     [/douyin|byteimg|bytedance|pstatp|ibyteimg|zjcdn/i, 'https://www.douyin.com/'],
+    [/twimg\.com/i, 'https://x.com/'],
   ];
   session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['http://*/*', 'https://*/*'] }, (d, cb) => {
     if (d.resourceType === 'image') {
