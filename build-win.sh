@@ -19,6 +19,7 @@ echo "== 3/5 生成页面"
 python3 build.py data.json index.html          # 网页版（同目录 covers/）
 rm -rf electron/app && mkdir -p electron/app/covers
 python3 build.py data.json electron/app/index.html
+cp -r onboarding electron/app/onboarding       # 首次启动引导的示例封面（Wikimedia，见 docs/CREDITS.md）
 cp "$( [ -f rules.json ] && echo rules.json || echo rules.example.json )" electron/app/rules.json          # 主进程同步时用同一套分类规则
 python3 - <<'PY'
 # 复制封面到桌面版；宽度超过 480px 的缩到 400px（1500 张大图同时解码会占用 1.5GB 内存，导致页面崩溃）

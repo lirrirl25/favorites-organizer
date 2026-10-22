@@ -170,6 +170,34 @@ main{padding:16px 0 60px}
   .open{display:none}
 }
 [hidden]{display:none!important}
+
+/* ---- 首次启动引导 ---- */
+.ob{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#1d1d1f}
+.ob[hidden]{display:none}
+.ob-wall{position:absolute;inset:-40px;display:flex;gap:16px;justify-content:center;filter:blur(3px) brightness(.55) saturate(1.1);transform:rotate(-4deg) scale(1.08)}
+.ob-col{flex:0 0 190px;display:flex;flex-direction:column;gap:16px;animation:obUp 60s linear infinite}
+.ob-col:nth-child(2n){animation-duration:75s;animation-direction:reverse}
+.ob-col:nth-child(3n){animation-duration:90s}
+@keyframes obUp{from{transform:translateY(0)}to{transform:translateY(-50%)}}
+.ob-c{flex:none;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+.ob-c img{display:block;width:100%}
+.ob-c .t{font-size:12px;padding:8px 10px 2px;color:#222;line-height:1.35}
+.ob-c .a{font-size:11px;padding:0 10px 9px;color:#999}
+.ob-box{position:relative;width:min(460px,92vw);background:rgba(255,255,255,.97);border-radius:22px;padding:30px 30px 22px;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center}
+.ob-box h2{margin:0 0 6px;font-size:24px}
+.ob-box .sub{color:var(--muted);font-size:14px;margin:0 0 20px;line-height:1.6}
+.ob-btns{display:flex;flex-direction:column;gap:10px}
+.ob-b{display:flex;align-items:center;gap:12px;width:100%;border:1px solid var(--line);background:#fff;border-radius:14px;padding:14px 16px;font-size:16px;font-weight:600;color:var(--ink);cursor:pointer;transition:.15s}
+.ob-b:hover{border-color:#bbb;transform:translateY(-1px)}
+.ob-b .ic{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;font-weight:800;flex:none}
+.ob-b .ok{margin-left:auto;font-size:13px;color:var(--done);font-weight:600}
+.ob-b .go{margin-left:auto;font-size:13px;color:var(--muted);font-weight:500}
+.ob-b.on{border-color:var(--done);background:#f0fbf6}
+.ob-note{margin:18px 0 16px;padding:11px 14px;background:#fff7e6;border-radius:12px;font-size:13.5px;color:#7a5200;line-height:1.6}
+.ob-start{width:100%;padding:13px;font-size:16px;border-radius:14px}
+.ob-start:disabled{opacity:.4;cursor:not-allowed}
+.ob-later{margin-top:10px;background:none;border:0;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline}
+@media (prefers-reduced-motion:reduce){.ob-col{animation:none}}
 </style>
 </head>
 <body>
@@ -211,6 +239,21 @@ main{padding:16px 0 60px}
 </main>
 <div class="mask" id="mask"><div class="modal" id="modal"></div></div>
 <div class="toast" id="toast"></div>
+<div class="ob" id="onboard" hidden>
+  <div class="ob-wall" id="ob-wall" aria-hidden="true"></div>
+  <div class="ob-box" role="dialog" aria-labelledby="ob-h">
+    <h2 id="ob-h">👋 欢迎使用收藏夹整理</h2>
+    <p class="sub">把小红书、抖音和 X 的收藏放到一个地方，<br>自动分类，随时搜索。先登录你要整理的平台：</p>
+    <div class="ob-btns">
+      <button class="ob-b" data-p="rednote"><span class="ic" style="background:#ff2442">书</span>登录小红书<span class="go">去登录 ›</span></button>
+      <button class="ob-b" data-p="douyin"><span class="ic" style="background:#111">抖</span>登录抖音<span class="go">去登录 ›</span></button>
+      <button class="ob-b" data-p="x"><span class="ic" style="background:#000">𝕏</span>登录 X<span class="go">去登录 ›</span></button>
+    </div>
+    <div class="ob-note">🔐 只需要登录一次，之后每次打开软件都会在后台自动同步你的收藏。<br>软件只读取收藏列表，不会替你点赞、发帖或取消收藏。</div>
+    <button class="btn primary ob-start" id="ob-start" disabled>开始同步</button>
+    <button class="ob-later" id="ob-later">稍后再说</button>
+  </div>
+</div>
 <div class="syncbar" id="syncbar"></div>
 
 <script id="fav-data" type="application/json">/*__DATA__*/</script>
@@ -589,7 +632,8 @@ function runSync(p,mode,auto){
   var known=ITEMS.map(function(i){return i.key;});
   var local=ITEMS.filter(function(i){return i.source===p&&!isUnsaved(i);}).map(function(i){return i.key;});
   var need=ITEMS.filter(function(i){return i.source===p&&!i.cover_local;}).map(function(i){return i.key;});
-  return SYNC.start(p,{mode:mode,knownKeys:known,localKeys:local,needCoverKeys:need,auto:!!auto}).then(function(r){
+  var repair=p==='x'?ITEMS.filter(function(i){return i.source==='x'&&(/^\[媒体帖\]/.test(i.title||'')||!i.cover_local&&!i.cover);}).map(function(i){return i.key;}):[];
+  return SYNC.start(p,{mode:mode,knownKeys:known,localKeys:local,needCoverKeys:need,repairKeys:repair,auto:!!auto}).then(function(r){
     syncing=null;var msg=applySyncResult(r);lastProg[p]={msg:msg};syncBar('');toast(msg);
     if($('mask').classList.contains('show')&&$('prog-'+p))openSyncPanel();return r;
   }).catch(function(e){syncing=null;syncBar('');var m='同步失败：'+(e&&e.message||e)+'（详情见同步日志）';lastProg[p]={msg:m,captcha:true};toast(m);
@@ -643,9 +687,34 @@ if(SYNC){
   SYNC.onProgress(function(p){if(!p||!p.platform)return;lastProg[p.platform]=p;panelProg(p);
     syncBar((p.captcha?'⚠️ ':'🔄 ')+PNAME[p.platform]+'：'+(p.msg||''),p.captcha);});
   var meta0=DESK.get('syncmeta')||{};
-  if(meta0.autoSync&&!window.__FAV_NO_AUTOSYNC){setTimeout(function(){SYNC.status().then(function(st){
+  if(meta0.autoSync&&!window.__FAV_NO_AUTOSYNC){setTimeout(function(){if(!ITEMS.length&&!meta0.onboarded)return;SYNC.status().then(function(st){
     var ps=['rednote','douyin','x'].filter(function(p){return st[p];});
     ps.reduce(function(pr,p){return pr.then(function(){return runSync(p,'incremental',true);});},Promise.resolve());});},4000);}
+}
+
+/* ---------- 首次启动引导（还没有任何收藏时显示） ---------- */
+var OB_SAMPLES=[['周末在家就能做的炸猪排','@厨房日记'],['跑步姿势这样调，膝盖不再疼','@跑步教练'],['极简工作台布置分享','@桌面控'],['秋冬穿搭 | 一件风衣三种搭法','@穿搭笔记'],['在家做拿铁拉花的小技巧','@咖啡时间'],['新手学 Rust 一周的感受','@dev_notes'],['防晒霜怎么选？看这一篇','@护肤研究所'],['复古胶片相机入门','@老物件'],['第一次谈合作要注意的 5 件事','@职场小记'],['小衣柜收纳改造前后对比','@收纳达人'],['每月存钱计划表（附模板）','@理财小白'],['十分钟番茄意面','@一人食'],['我的手账和读书笔记','@读书人'],['Switch 双人游戏推荐','@游戏日常'],['图书馆里适合自习的角落','@学习打卡'],['公园野餐清单','@周末去哪'],['木屋民宿住了两晚','@旅行笔记'],['个税退税步骤整理','@办事指南'],['小猫到家第一周要准备什么','@猫咪日记'],['海岛旅行拍照攻略','@旅拍']];
+function buildObWall(){var w=$('ob-wall');if(w.childNodes.length)return;var cols=7,html='';
+  for(var c=0;c<cols;c++){var cards='';for(var k=0;k<8;k++){var i=(c*3+k*7)%OB_SAMPLES.length,sm=OB_SAMPLES[i];
+      cards+='<div class="ob-c"><img src="onboarding/'+(i<9?'0':'')+(i+1)+'.jpg" alt="" loading="lazy"><div class="t">'+esc(sm[0])+'</div><div class="a">'+esc(sm[1])+'</div></div>';}
+    html+='<div class="ob-col">'+cards+cards+'</div>';}   // 同一组卡片放两遍，滚到一半无缝循环
+  w.innerHTML=html;}
+var obTimer=null;
+function obRefresh(){if(!SYNC)return Promise.resolve();return SYNC.status().then(function(st){var any=false;
+  [].forEach.call(document.querySelectorAll('.ob-b'),function(b){var on=!!(st&&st[b.dataset.p]);any=any||on;b.classList.toggle('on',on);
+    b.querySelector('span:last-child').className=on?'ok':'go';b.querySelector('span:last-child').textContent=on?'✓ 已登录':'去登录 ›';});
+  $('ob-start').disabled=!any;}).catch(function(){});}
+function closeOnboard(){$('onboard').hidden=true;if(obTimer){clearInterval(obTimer);obTimer=null;}}
+function openOnboard(){buildObWall();$('onboard').hidden=false;obRefresh();if(!obTimer)obTimer=setInterval(obRefresh,2000);}
+if(SYNC){
+  [].forEach.call(document.querySelectorAll('.ob-b'),function(b){b.onclick=function(){SYNC.login(b.dataset.p).then(obRefresh);};});
+  $('ob-later').onclick=closeOnboard;
+  $('ob-start').onclick=function(){
+    var m=DESK.reload('syncmeta')||{};m.autoSync=true;m.onboarded=Date.now();DESK.set('syncmeta',m);
+    SYNC.status().then(function(st){closeOnboard();var ps=['rednote','douyin','x'].filter(function(p){return st[p];});
+      toast('开始在后台同步 '+ps.map(function(p){return PNAME[p];}).join('、')+'，新收藏会直接出现在列表里',5000);
+      ps.reduce(function(pr,p){return pr.then(function(){return runSync(p,'incremental',true);});},Promise.resolve());});};
+  setTimeout(function(){if(!ITEMS.length||window.__FAV_FORCE_ONBOARD)openOnboard();},0);
 }
 
 if(DESK){document.title='收藏夹整理';}

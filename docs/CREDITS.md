@@ -1,5 +1,7 @@
 # 截图图片来源
 
+`onboarding/01.jpg`–`20.jpg`（首次启动引导背景里滚动的示例卡片，也出现在 `docs/onboarding.png`）就是下表同编号的照片缩小版；卡片上的标题和作者同样是虚构的。
+
 `docs/screenshot.png` 里的封面照片全部来自 Wikimedia Commons，按各自许可使用（CC0 / 公有领域 / CC BY / CC BY-SA），已裁剪缩放。截图里的标题和作者都是虚构的，和照片无关。
 
 | 卡片 | 原图 · 作者 · 许可 |

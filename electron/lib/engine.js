@@ -125,17 +125,60 @@ function xUser(o) {
   const u = (((o.core || {}).user_results || {}).result) || {};
   return str(first((u.core || {}).screen_name, (u.legacy || {}).screen_name));
 }
+function xUnwrap(o) {
+  while (o && (o.__typename === 'TweetWithVisibilityResults' || (!o.legacy && o.tweet))) o = o.tweet;
+  return o || {};
+}
+function xMediaCover(m) {
+  if (!m) return '';
+  let c = str(m.media_url_https || m.media_url || ((m.media_info || {}).original_img_url) || '');
+  if (!c) return '';
+  if (/pbs\.twimg\.com/.test(c)) {
+    if (!/[?&]name=/.test(c)) { const mm = c.match(/^(.*)\.(jpg|jpeg|png|webp)$/i); c = mm ? mm[1] + '?format=' + (mm[2].toLowerCase() === 'png' ? 'png' : 'jpg') + '&name=medium' : c; }
+    c = c.replace(/name=(small|thumb|tiny|large|orig|\d+x\d+)/, 'name=medium');
+  }
+  return c;
+}
+function xCardImage(card) {
+  const bv = (((card || {}).legacy || {}).binding_values) || [];
+  const arr = Array.isArray(bv) ? bv : Object.keys(bv).map((k) => ({ key: k, value: bv[k] }));
+  for (const name of ['photo_image_full_size_large', 'summary_photo_image_large', 'thumbnail_image_large', 'photo_image_full_size', 'summary_photo_image', 'thumbnail_image', 'player_image_large', 'player_image', 'thumbnail_image_original', 'photo_image_full_size_original']) {
+    const e = arr.find((x) => x && x.key === name);
+    const u = e && e.value && e.value.image_value && e.value.image_value.url;
+    if (u) return str(u);
+  }
+  return '';
+}
+const X_PLACEHOLDER = /^\[媒体帖\]/;
+function xCleanText(t) {
+  return str(t).replace(/https?:\/\/t\.co\/\w+/g, ' ').replace(/[ \t\u00a0]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+}
+function xTitle(t) {
+  t = xCleanText(t); if (!t) return '';
+  const lines = t.split('\n').map((x) => x.trim()).filter(Boolean);
+  let s = lines.join(' ');
+  if (s.length > 120) s = s.slice(0, 118) + '…';
+  return s;
+}
 function xItem(o) {
+  o = xUnwrap(o);
   const id = str(o.rest_id), lg = o.legacy || {};
   const sn = xUser(o);
-  const media = ((lg.extended_entities || lg.entities || {}).media) || [];
-  const m0 = media[0] || null;
+  // 纯转推：内容在 retweeted_status_result 里
+  const rt = xUnwrap(((lg.retweeted_status_result || {}).result) || null);
+  const src = rt && rt.legacy && (/^RT @/.test(str(lg.full_text)) || !str(lg.full_text)) ? rt : o;
+  const slg = src.legacy || {};
+  const media = ((slg.extended_entities || {}).media || (slg.entities || {}).media || []);
   const isVideo = media.some((m) => m.type === 'video' || m.type === 'animated_gif');
-  let cover = m0 && m0.media_url_https ? str(m0.media_url_https) : '';
-  if (cover && !/[?&]name=/.test(cover)) cover = cover.replace(/\.(jpg|jpeg|png|webp)$/i, '') + '?format=jpg&name=medium';
-  cover = cover.replace(/name=(small|thumb|tiny|large|orig)/, 'name=medium');
-  let title = str(((o.note_tweet || {}).note_tweet_results || {}).result && o.note_tweet.note_tweet_results.result.text || lg.full_text);
-  title = title.replace(/\s*https:\/\/t\.co\/\w+\s*$/g, '').replace(/\s+/g, ' ').trim();
+  const art = ((((src.article || {}).article_results) || {}).result) || null;
+  let cover = xMediaCover(media[0]);
+  if (!cover) cover = xCardImage(src.card);
+  if (!cover && art) cover = xMediaCover((art.cover_media || {}));
+  const note = ((((src.note_tweet || {}).note_tweet_results) || {}).result || {}).text;
+  let title = '';
+  if (art && art.title) title = xTitle(art.title);
+  if (!title) title = xTitle(note || slg.full_text || slg.text || src.text || '');
+  if (!title && art) title = xTitle(art.preview_text);
   const author = sn ? '@' + sn : '';
   if (!title) title = '[媒体帖] ' + (author || '@unknown');
   return {
@@ -162,7 +205,7 @@ function parseX(json, res) {
       if (/^cursor-bottom/.test(eid)) { bottom = true; continue; }
       if (!/^tweet-/.test(eid)) continue;
       let r = ((((en.content || {}).itemContent || {}).tweet_results) || {}).result;
-      if (r && r.__typename === 'TweetWithVisibilityResults') r = r.tweet;
+      r = xUnwrap(r);
       if (looksLikeTweet(r)) { found.push(r); tweets++; }
     }
   }
@@ -311,6 +354,13 @@ function sanitizeItems(platform, items, opts = {}) {
   return { items: out, dropped };
 }
 
+// X 旧条目是占位标题 / 没封面的：用重新同步到的数据补上
+function repairX(old, patch) {
+  if (old.source !== 'x') return;
+  if (patch.title_live && !X_PLACEHOLDER.test(patch.title_live) && (!old.title || X_PLACEHOLDER.test(old.title))) old.title = patch.title_live;
+  if (patch.cover && !old.cover_local && old.cover !== patch.cover) { old.cover = patch.cover; if (patch.cover_local) old.cover_local = patch.cover_local; }
+}
+function xNeedsRepair(it) { return !!it && it.source === 'x' && (X_PLACEHOLDER.test(it.title || '') || !it.cover_local); }
 /* ---------------- 待确认（同步结果先放这里，用户确认后才合并） ---------------- */
 function buildBatch(incoming, knownKeys, rejectedKeys, RULES, now, meta = {}) {
   const rejected = new Set(rejectedKeys || []);
@@ -322,7 +372,7 @@ function applyPatch(synced, idx, patch) {
   if (idx.has(patch.key)) {
     const old = synced[idx.get(patch.key)];
     if (old._patch) Object.assign(old, patch);
-    else { for (const p of ['likes', 'likes_num', 'url', 'type']) if (patch[p] !== '' && patch[p] != null) old[p] = patch[p]; if (!old.cover && patch.cover) old.cover = patch.cover; if (patch.cover_local && !old.cover_local) old.cover_local = patch.cover_local; old.seen_at = patch.seen_at; }
+    else { for (const p of ['likes', 'likes_num', 'url', 'type']) if (patch[p] !== '' && patch[p] != null) old[p] = patch[p]; if (!old.cover && patch.cover) old.cover = patch.cover; if (patch.cover_local && !old.cover_local) old.cover_local = patch.cover_local; repairX(old, patch); old.seen_at = patch.seen_at; }
   } else { idx.set(patch.key, synced.length); synced.push(Object.assign({}, patch)); }
 }
 // 把待确认的批次合并进 synced / marks。excludeKeys = 用户删掉的条目
@@ -350,4 +400,4 @@ function applyBatches(synced, marks, batches, excludeKeys, now) {
   return { synced, marks, added, removed, restored, addedKeys };
 }
 
-module.exports = { isFavApi, isFavPage, coverSourceTag, sanitizeItems, buildBatch, applyBatches, norm, kwMatch, categorize, parseLikes, fmtLikes, noteIdFromUrl, parsePayload, mergeSynced, shouldStopIncremental, detectRemoved, rnItem, dyItem, xItem };
+module.exports = { isFavApi, isFavPage, coverSourceTag, sanitizeItems, buildBatch, applyBatches, norm, kwMatch, categorize, parseLikes, fmtLikes, noteIdFromUrl, parsePayload, mergeSynced, shouldStopIncremental, detectRemoved, rnItem, dyItem, xItem, repairX, xNeedsRepair };
