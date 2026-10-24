@@ -314,8 +314,8 @@ class SyncManager {
       }
 
       // ----- 滚动收集 -----
-      const maxScrolls = mode === 'full' ? 3000 : 120;
-      const deadline = Date.now() + (mode === 'full' ? 120 : 15) * 60 * 1000;
+      const maxScrolls = mode === 'full' ? 3000 : (platform === 'x' ? 40 : 120);
+      const deadline = Date.now() + (mode === 'full' ? 120 : (platform === 'x' ? 5 : 15)) * 60 * 1000;
       let idle = 0, lastCount = 0, lastH = 0, scrolls = 0, sinceBreak = 0, nextBreak = Math.round(rand(22, 34)), recover = 0;
       for (;;) {
         check();
@@ -349,6 +349,7 @@ class SyncManager {
         if (state.lastHasMore === false && keys.length === lastCount) { result.reachedEnd = true; result.stopReason = '已到收藏列表末尾'; break; }
         const sc = await this.scrollOnce(w);
         scrolls++; sinceBreak++;
+        if (scrolls % 10 === 0) this.log(`[${platform}] 滚动中 第 ${scrolls}/${maxScrolls} 次 已读取=${keys.length} 新增=${newCount}`);
         if (keys.length === lastCount && sc && Math.abs(sc.h - lastH) < 5) idle++; else idle = 0;
         lastCount = keys.length; lastH = sc ? sc.h : lastH;
         if (idle >= 6) {
