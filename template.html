@@ -185,7 +185,7 @@ main{padding:16px 0 60px}
 .ob-c .a{font-size:11px;padding:0 10px 9px;color:#999}
 .ob-box{position:relative;width:min(460px,92vw);background:rgba(255,255,255,.97);border-radius:22px;padding:30px 30px 22px;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center}
 .ob-box h2{margin:0 0 6px;font-size:24px}
-.ob-box .sub{color:var(--muted);font-size:14px;margin:0 0 20px;line-height:1.6}
+.ob-box .sub{display:block;color:var(--muted);font-size:14px;margin:0 0 20px;line-height:1.6}
 .ob-btns{display:flex;flex-direction:column;gap:10px}
 .ob-b{display:flex;align-items:center;gap:12px;width:100%;border:1px solid var(--line);background:#fff;border-radius:14px;padding:14px 16px;font-size:16px;font-weight:600;color:var(--ink);cursor:pointer;transition:.15s}
 .ob-b:hover{border-color:#bbb;transform:translateY(-1px)}
@@ -243,13 +243,13 @@ main{padding:16px 0 60px}
   <div class="ob-wall" id="ob-wall" aria-hidden="true"></div>
   <div class="ob-box" role="dialog" aria-labelledby="ob-h">
     <h2 id="ob-h">👋 欢迎使用收藏夹整理</h2>
-    <p class="sub">把小红书、抖音和 X 的收藏放到一个地方，<br>自动分类，随时搜索。先登录你要整理的平台：</p>
+    <p class="sub">小红书、抖音、X 的收藏，一处整理<br>登录要整理的平台：</p>
     <div class="ob-btns">
       <button class="ob-b" data-p="rednote"><span class="ic" style="background:#ff2442">书</span>登录小红书<span class="go">去登录 ›</span></button>
       <button class="ob-b" data-p="douyin"><span class="ic" style="background:#111">抖</span>登录抖音<span class="go">去登录 ›</span></button>
       <button class="ob-b" data-p="x"><span class="ic" style="background:#000">𝕏</span>登录 X<span class="go">去登录 ›</span></button>
     </div>
-    <div class="ob-note">🔐 只需要登录一次，之后每次打开软件都会在后台自动同步你的收藏。<br>软件只读取收藏列表，不会替你点赞、发帖或取消收藏。</div>
+    <div class="ob-note">🔐 登录一次，以后打开自动同步。<br>软件只读取收藏列表，不会替你点赞、发帖或取消收藏。</div>
     <button class="btn primary ob-start" id="ob-start" disabled>开始同步</button>
     <button class="ob-later" id="ob-later">稍后再说</button>
   </div>
@@ -466,7 +466,7 @@ function cardHTML(it){var st=statusOf(it),c=catColor(it.category),exp=isExpired(
       '<span class="tag">'+(it.type==='video'?'▶ 视频':'🖼 图文')+'</span>'+
       '<span class="tag cat">'+(EMOJI[it.category]||'')+' '+esc(it.category)+'</span></div>'+
       '<p class="title">'+hl(it.title)+'</p>'+
-      '<div class="sub"><span class="au">@'+hl(it.author||'未知作者')+'</span><span>❤ '+esc(it.likes||'0')+'</span></div>'+
+      '<div class="sub"><span class="au">@'+hl(String(it.author||'未知作者').replace(/^@/,''))+'</span><span>❤ '+esc(it.likes||'0')+'</span></div>'+
       (exp&&it.expired_reason?'<div class="reason">⏰ '+esc(it.expired_reason)+'</div>':'')+'</div>'+
     '</a>'+xbarHTML(it)+
     '<div class="foot"><div class="status">'+STATUS.map(function(s){return '<button data-s="'+s[0]+'" class="s-'+s[0]+(st===s[0]?' on':'')+'">'+s[1]+'</button>';}).join('')+'</div></div></article>';}
